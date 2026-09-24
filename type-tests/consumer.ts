@@ -1,4 +1,4 @@
-import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, delay, timeout, cooldown, subtree, createRunner, SUCCESS, RUNNING } from 'bhtrees';
+import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, delay, timeout, cooldown, subtree, parallel, createRunner, SUCCESS, RUNNING } from 'bhtrees';
 import type { ActionContext, Clock, NodeDefinition, RunnerSnapshot, WaitDescriptor } from 'bhtrees';
 
 const clock: Clock = { setTimeout: () => ({ id: 1 }), clearTimeout: handle => { void handle; } };
@@ -100,3 +100,18 @@ void parentId;
 subtree({ id: 'invalid-input', child: tree, input: 42 });
 // @ts-expect-error Subtree calls require a child definition.
 subtree({ id: 'missing-definition' });
+
+createRunner(parallel({ id: 'parallel', successThreshold: 2, failureThreshold: 1,
+  steps: [{ node: tree }, { node: decorated, input: scope => scope.input }],
+  output: (results, status) => {
+    // @ts-expect-error Parallel completion arrays are readonly.
+    results[0] = undefined;
+    return { status, values: results.map(result => result?.output) };
+  }
+}));
+// @ts-expect-error Parallel requires explicit thresholds.
+parallel({ id: 'missing-policy', steps: [{ node: tree }] });
+parallel({ id: 'invalid-save', successThreshold: 1, failureThreshold: 1,
+  // @ts-expect-error Parallel outputs require a reducer instead of shared saves.
+  steps: [{ node: tree, save: 'collision' }]
+});

@@ -1,7 +1,7 @@
 import type { Reactive, ActionOptions, ActionDefinition, SequenceOptions, SequenceDefinition,
   SelectorOptions, SelectorDefinition, ConditionOptions, ConditionDefinition,
   DecoratorKind, DecoratorOptions, DecoratorDefinition,
-  RetryOptions, RetryDefinition, RepeatOptions, RepeatDefinition, TimedDecoratorKind, TimedDecoratorOptions, TimedDecoratorDefinition, SubtreeOptions, SubtreeDefinition } from './types.js';
+  RetryOptions, RetryDefinition, RepeatOptions, RepeatDefinition, TimedDecoratorKind, TimedDecoratorOptions, TimedDecoratorDefinition, SubtreeOptions, SubtreeDefinition, ParallelOptions, ParallelDefinition } from './types.js';
 
 export const SUCCESS = 'SUCCESS';
 export const FAILURE = 'FAILURE';
@@ -91,4 +91,25 @@ export function subtree({ input, output = scope => scope.last, ...options }: Sub
   if (input !== undefined && typeof input !== 'function') throw new TypeError('Invalid subtree input binding');
   if (typeof output !== 'function') throw new TypeError('Invalid subtree output binding');
   return Object.freeze({ ...decorator('subtree', options), input, output });
+}
+
+export function parallel({ id, steps, successThreshold, failureThreshold, reactive = 'inherited',
+  output = results => results }: ParallelOptions): ParallelDefinition {
+  checkReactive(reactive);
+  if (typeof id !== 'string' || !id || !Array.isArray(steps) || steps.length === 0 || typeof output !== 'function') {
+    throw new TypeError('Parallel nodes require an id, nonempty steps, and optional output reducer');
+  }
+  for (const threshold of [successThreshold, failureThreshold]) {
+    if (!Number.isSafeInteger(threshold) || threshold < 1 || threshold > steps.length) {
+      throw new RangeError('Parallel thresholds must be positive integers within the child count');
+    }
+  }
+  if (successThreshold + failureThreshold > steps.length + 1) {
+    throw new RangeError('Parallel thresholds must guarantee a result when all children finish');
+  }
+  for (const step of steps) {
+    if (step.save !== undefined) throw new TypeError('Parallel outputs require a reducer, not save bindings');
+  }
+  return Object.freeze({ type: 'parallel', id, successThreshold, failureThreshold, reactive, output,
+    steps: Object.freeze(steps.map(step => Object.freeze({ ...step }))) });
 }

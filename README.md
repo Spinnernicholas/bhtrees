@@ -269,6 +269,59 @@ Snapshots expose `parentActivationId` (`null` at the root) so repeated definitio
 references can be distinguished by activation ancestry. Browser rows use that
 ancestry to match live status; selection is still definition-based.
 
+## Parallel branches
+
+`parallel({ id, steps, successThreshold, failureThreshold, output?, reactive? })`
+keeps multiple branches active. Both thresholds are required positive integers
+no greater than the nonempty child count; their sum must be at most child count
+plus one, ensuring that every possible set of completed results reaches a threshold.
+For all-success behavior use `successThreshold: steps.length, failureThreshold: 1`;
+for first-success behavior use `successThreshold: 1, failureThreshold: steps.length`.
+
+Branches are visited in declaration order until they finish, wait, or yield.
+The engine then visits the next unfinished branch; once the pass is finished,
+execution yields until another drive. Completed branches never restart within
+that parallel activation. `reactive` controls inheritance into descendants and
+does not reset completed results. A transition budget can split a pass across
+ticks/steps without restarting it, and all branches share the runner's step budget.
+This is cooperative concurrency: user callbacks still run synchronously.
+
+The first threshold reached by processed child completions wins immediately.
+Even when callbacks arrive in another order, branch visitation order determines
+which result the engine processes first. Later children may never start if an
+earlier child reaches a threshold. Remaining active branches are cancelled with
+reason `'parallel-complete'`, in declaration order and child-first within each
+branch, before the output reducer runs. Cleanup failures, branch exceptions, and
+reducer exceptions remain execution errors; they do not count as child failures.
+
+Each step accepts an `input(scope)` binding, captured once on branch entry. Its
+scope contains the parallel input, an empty frozen `vars`, and undefined `last`;
+branches cannot read sibling outputs implicitly. Child locals and composite scopes
+are isolated. Application object inputs/services remain shared by contract.
+`save` bindings are rejected: use an explicit `output(results, status)` reducer.
+
+`results` is a frozen array in declaration order. Entries are frozen completion
+wrappers (`status`, `output`), or `undefined` for unfinished/unvisited branches.
+The default reducer returns that array, preserving both success and failure data.
+Live parallel snapshots expose `parallelResults` with the same shape.
+
+```js
+import { parallel, action } from './dist/index.js';
+
+const requests = parallel({ id: 'requests', successThreshold: 2, failureThreshold: 1,
+  steps: ['profile', 'settings'].map(name => ({ node: action({ id: name,
+    enter: c => c.wait.promise(c.services.load(name), { resume: 'loaded' }),
+    resume: { loaded: (c, value) => c.success(value) }
+  }) })),
+  output: results => results.map(result => result?.output)
+});
+```
+
+Snapshots also identify `parentChildIndex` (`null` at the root), distinguishing
+multiple occurrences of the same definition under one parent. Browser rows match
+both ancestry and child position. Concurrent completions of a shared cooldown
+definition refresh its single runner-local cooldown timer.
+
 ## Reactivity
 
 Every node accepts `reactive: true | false | 'inherited'`. The default is

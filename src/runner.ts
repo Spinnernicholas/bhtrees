@@ -13,6 +13,8 @@ interface Frame {
   node: NodeDefinition;
   activationId: number;
   parentActivationId: number | null;
+  parentChildIndex: number | null;
+  parallelResults?: (Readonly<Completion> | undefined)[];
   input: Value;
   local: Record<string, Value>;
   vars: Record<string, Value>;
@@ -49,13 +51,13 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
   if (typeof clock.setTimeout !== 'function' || typeof clock.clearTimeout !== 'function') throw new TypeError('Invalid clock');
   const definitions = new Map<string, NodeDefinition>();
   function validate(node: NodeDefinition, ancestors = new Set<NodeDefinition>()) {
-    if (!node || !['action', 'condition', 'sequence', 'selector', 'inverter', 'forceSuccess', 'forceFailure', 'retry', 'repeat', 'delay', 'timeout', 'cooldown', 'subtree'].includes(node.type)) throw new TypeError('Invalid node');
+    if (!node || !['action', 'condition', 'sequence', 'selector', 'inverter', 'forceSuccess', 'forceFailure', 'retry', 'repeat', 'delay', 'timeout', 'cooldown', 'subtree', 'parallel'].includes(node.type)) throw new TypeError('Invalid node');
     if (![undefined, true, false, 'inherited'].includes(node.reactive)) throw new TypeError('Invalid reactive setting');
     if (ancestors.has(node)) throw new TypeError('Cyclic tree definition');
     if (definitions.has(node.id) && definitions.get(node.id) !== node) throw new TypeError(`Duplicate node id: ${node.id}`);
     definitions.set(node.id, node);
     if ('child' in node) validate(node.child, new Set([...ancestors, node]));
-    if (node.type === 'sequence' || node.type === 'selector') {
+    if (node.type === 'sequence' || node.type === 'selector' || node.type === 'parallel') {
       for (const step of node.steps) {
         if (step.input !== undefined && typeof step.input !== 'function') throw new TypeError('Invalid input binding');
         if (step.save !== undefined && typeof step.save !== 'string') throw new TypeError('Invalid save binding');
@@ -83,8 +85,9 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
     let frame = parent?.children.get(parent.index);
     if (!frame) {
       const reactive = node.reactive ?? 'inherited';
-      frame = { node, activationId: ++serial, parentActivationId: parent?.activationId ?? null, input: value, local: Object.create(null),
+      frame = { node, activationId: ++serial, parentActivationId: parent?.activationId ?? null, parentChildIndex: parent?.index ?? null, input: value, local: Object.create(null),
         vars: Object.create(null), phase: 'enter', index: 0, last: undefined, wait: null,
+        parallelResults: node.type === 'parallel' ? Array.from({ length: node.steps.length }, () => undefined) : undefined,
         completedIterations: node.type === 'retry' || node.type === 'repeat' ? 0 : undefined,
         children: new Map(), effectiveReactive: reactive === 'inherited' ? parent?.effectiveReactive ?? false : reactive };
       if (parent) parent.children.set(parent.index, frame);
@@ -97,6 +100,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
   function prepare(frame: Frame) {
     if (frame.traversal === traversal) return;
     frame.traversal = traversal;
+    if (frame.node.type === 'parallel') { frame.index = 0; frame.phase = 'enter'; }
     if (frame.node.type === 'sequence' || frame.node.type === 'selector') {
       if (frame.effectiveReactive) frame.index = 0;
       frame.phase = 'enter';
@@ -136,9 +140,9 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
     }
   }
 
-  function complete(frame: Frame, result: Completion) {
+  function complete(frame: Frame, result: Completion, reason = 'interrupted') {
     releaseTimer(frame);
-    haltChildren(frame, 'interrupted');
+    haltChildren(frame, reason);
     stack.pop();
     frame.wait = null;
     const parent = stack.at(-1);
@@ -242,8 +246,26 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
 
   function finishTraversal() {
     // Only now is it known which previously running branches were not reached.
-    for (const frame of stack) haltChildren(frame, 'interrupted', frame.index);
+    for (const frame of stack) {
+      if (frame.node.type !== 'parallel') haltChildren(frame, 'interrupted', frame.index);
+    }
     traversalOpen = false;
+  }
+
+  function suspendParallelBranch() {
+    // The deepest parallel owns this yielded branch. Preserve every sibling activation.
+    for (let i = stack.length - 2; i >= 0; i--) {
+      const parent = stack[i];
+      if (parent.node.type !== 'parallel') continue;
+      for (const frame of stack.slice(i + 1)) {
+        if (frame.node.type !== 'parallel') haltChildren(frame, 'interrupted', frame.index);
+      }
+      stack.length = i + 1;
+      parent.index++;
+      parent.phase = 'enter';
+      return true;
+    }
+    return false;
   }
 
   function transition() {
@@ -300,6 +322,33 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
       accept(frame, (frame.node.tick ?? frame.node.enter)!(context(frame)));
       return true;
     }
+    if (frame.node.type === 'parallel') {
+      const results = frame.parallelResults!;
+      if (frame.phase === 'childResult') {
+        results[frame.index] = Object.freeze({ ...frame.childResult! });
+        frame.childResult = undefined;
+        const successes = results.filter(result => result?.status === SUCCESS).length;
+        const failures = results.filter(result => result?.status === FAILURE).length;
+        const resultStatus = successes >= frame.node.successThreshold ? SUCCESS
+          : failures >= frame.node.failureThreshold ? FAILURE : undefined;
+        if (resultStatus) {
+          // Cleanup precedes the reducer; a cleanup error is an execution error.
+          haltChildren(frame, 'parallel-complete');
+          const output = frame.node.output(Object.freeze([...results]), resultStatus);
+          complete(frame, { status: resultStatus, output });
+        } else { frame.index++; frame.phase = 'enter'; }
+        return true;
+      }
+      while (frame.index < frame.node.steps.length && results[frame.index]) frame.index++;
+      if (frame.index === frame.node.steps.length) return false;
+      const binding = frame.node.steps[frame.index];
+      const retained = frame.children.get(frame.index);
+      const branchScope: Scope = { input: frame.input, vars: Object.freeze(Object.create(null)), last: undefined };
+      const input = retained ? retained.input : binding.input ? binding.input(branchScope) : frame.input;
+      frame.phase = 'child';
+      push(binding.node, input, frame);
+      return true;
+    }
     if ('child' in frame.node) {
       if (frame.node.type === 'delay' && !frame.timerStarted) {
         frame.timerStarted = true;
@@ -337,6 +386,9 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
         }
         if (frame.node.type === 'delay' || frame.node.type === 'timeout' || frame.node.type === 'cooldown') {
           if (frame.node.type === 'cooldown' && frame.node.ms > 0) {
+            const previous = cooldowns.get(frame.node);
+            cooldowns.delete(frame.node);
+            previous?.dispose();
             cooldowns.set(frame.node, startTimer(frame.node.ms));
           }
           complete(frame, result);
@@ -410,12 +462,13 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
     return Object.freeze({ status, output, error, paused, tick: tickNumber, transitions: transitionNumber,
       queuedResumes: queue.length,
       frames: Object.freeze(frames.map(frame => Object.freeze({
-        nodeId: frame.node.id, activationId: frame.activationId, parentActivationId: frame.parentActivationId, phase: frame.phase,
+        nodeId: frame.node.id, activationId: frame.activationId, parentActivationId: frame.parentActivationId, parentChildIndex: frame.parentChildIndex, phase: frame.phase,
         input: frame.input, local: Object.freeze({ ...frame.local }),
         vars: Object.freeze({ ...frame.vars }), childIndex: frame.index,
         reactive: frame.node.reactive ?? 'inherited', effectiveReactive: frame.effectiveReactive,
         onTraversal: stack.includes(frame),
         completedIterations: frame.completedIterations,
+        parallelResults: frame.parallelResults ? Object.freeze([...frame.parallelResults]) : undefined,
         waitingOn: frame.wait?.kind ?? (frame.node.type === 'delay' && frame.timer ? 'timer' : undefined)
       }))) });
   }
@@ -447,9 +500,19 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
         }
       }
       for (let count = 0; count < budget; count++) {
-        if (!transition()) { finishTraversal(); break; }
+        const advanced = transition();
+        if (!advanced || yielded) {
+          if (status === RUNNING && suspendParallelBranch()) {
+            yielded = false;
+            transitionNumber++;
+            continue;
+          }
+          if (advanced) transitionNumber++;
+          finishTraversal();
+          break;
+        }
         transitionNumber++;
-        if (yielded || status !== RUNNING) { finishTraversal(); break; }
+        if (status !== RUNNING) { finishTraversal(); break; }
       }
     } catch (cause) {
       status = 'errored';

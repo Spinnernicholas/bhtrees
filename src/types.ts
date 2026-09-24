@@ -121,7 +121,31 @@ export interface SubtreeDefinition extends Omit<DecoratorDefinition, 'type'> {
   readonly input?: (scope: Scope) => Value;
   readonly output: (scope: Scope, result: Readonly<Completion>) => Value;
 }
-export type NodeDefinition = ActionDefinition | ConditionDefinition | SequenceDefinition | SelectorDefinition | DecoratorDefinition | RetryDefinition | RepeatDefinition | TimedDecoratorDefinition | SubtreeDefinition;
+export interface ParallelStep {
+  node: NodeDefinition;
+  input?: (scope: Scope) => Value;
+  /** Parallel branches expose outputs through the reducer, never shared save bindings. */
+  save?: never;
+}
+export type ParallelResults = readonly (Readonly<Completion> | undefined)[];
+export interface ParallelOptions {
+  id: string;
+  steps: readonly ParallelStep[];
+  successThreshold: number;
+  failureThreshold: number;
+  reactive?: Reactive;
+  output?: (results: ParallelResults, status: Completion['status']) => Value;
+}
+export interface ParallelDefinition {
+  readonly type: 'parallel';
+  readonly id: string;
+  readonly steps: readonly Readonly<ParallelStep>[];
+  readonly successThreshold: number;
+  readonly failureThreshold: number;
+  readonly reactive: Reactive;
+  readonly output: (results: ParallelResults, status: Completion['status']) => Value;
+}
+export type NodeDefinition = ActionDefinition | ConditionDefinition | SequenceDefinition | SelectorDefinition | DecoratorDefinition | RetryDefinition | RepeatDefinition | TimedDecoratorDefinition | SubtreeDefinition | ParallelDefinition;
 /** Timer handles are opaque and owned by the injected host clock. */
 export interface Clock {
   setTimeout(callback: () => void, ms: number): Value;
@@ -137,9 +161,11 @@ export type FramePhase = 'enter' | 'running' | 'waiting' | 'child' | 'childResul
 export interface FrameSnapshot {
   /** Finished child attempts for retry/repeat frames, including failures. */
   readonly completedIterations?: number;
+  readonly parallelResults?: ParallelResults;
   readonly nodeId: string;
   readonly activationId: number;
   readonly parentActivationId: number | null;
+  readonly parentChildIndex: number | null;
   readonly phase: FramePhase;
   readonly input: Value;
   readonly local: Readonly<Record<string, Value>>;

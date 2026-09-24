@@ -6,7 +6,7 @@ async function until(predicate, message) {
   throw new Error(message);
 }
 try {
-  const { inverter, condition, createRunner, action, sequence, subtree, RUNNING } = await import('../../dist/index.js');
+  const { inverter, condition, createRunner, action, sequence, subtree, parallel, RUNNING, SUCCESS } = await import('../../dist/index.js');
   const { mountTreeView } = await import('./tree-view.js');
   const target = document.createElement('ol');
   const tree = inverter({ id: 'inverted', child: condition({ id: 'predicate', test: () => false }) });
@@ -33,6 +33,17 @@ try {
   check(!target.querySelector('[data-node-id="second-call"] [data-node-id="shared-leaf"]').classList.contains('active'),
     'Inactive shared definition occurrence was marked active');
   callView.dispose();
+  const sharedBranch = action({ id: 'shared-branch', tick: c => c.input ? SUCCESS : RUNNING });
+  const parallelTree = parallel({ id: 'parallel', successThreshold: 2, failureThreshold: 1, steps: [
+    { node: sharedBranch, input: () => false }, { node: sharedBranch, input: () => true }
+  ] });
+  const parallelView = mountTreeView({ target, tree: parallelTree });
+  const parallelRunner = createRunner(parallelTree);
+  parallelView.update(parallelRunner.tick());
+  const branchRows = target.querySelectorAll('[data-node-id="shared-branch"]');
+  check(branchRows[0].classList.contains('active') && !branchRows[1].classList.contains('active'),
+    'Parallel rows must distinguish repeated definitions by child position');
+  parallelRunner.cancel(); parallelView.dispose();
   await until(() => frame.contentDocument?.querySelector('#history li'), 'Application did not initialize');
   const doc = frame.contentDocument;
   check(frame.contentWindow.getComputedStyle(doc.querySelector('.playground')).display === 'grid', 'Stylesheet did not load');

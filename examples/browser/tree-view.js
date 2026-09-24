@@ -9,8 +9,8 @@ export function mountTreeView({ target, tree, labels = {}, onSelect = () => {} }
     if (text !== undefined) node.textContent = text;
     return node;
   }
-  function build(definition, binding, ancestors = []) {
-    const path = [...ancestors, definition.id];
+  function build(definition, binding, ancestors = [], childIndex = null) {
+    const path = [...ancestors, { nodeId: definition.id, childIndex }];
     const row = element('li', `tree-node ${definition.type}`);
     row.dataset.nodeId = definition.id;
     const header = element('button', 'node-header');
@@ -30,7 +30,7 @@ export function mountTreeView({ target, tree, labels = {}, onSelect = () => {} }
     const steps = definition.steps ?? (definition.child ? [{ node: definition.child }] : undefined);
     if (steps) {
       const children = element('ol', 'node-children');
-      for (const step of steps) children.append(build(step.node, step, path));
+      for (const [index, step] of steps.entries()) children.append(build(step.node, step, path, index));
       row.append(children, element('div', 'node-end', `end ${definition.type}`));
     }
     rows.push({ definition, row, header, status, select, path });
@@ -53,8 +53,8 @@ export function mountTreeView({ target, tree, labels = {}, onSelect = () => {} }
     update(snapshot) {
       for (const { definition, row, status, path } of rows) {
         let frame, parentActivationId = null;
-        for (const nodeId of path) {
-          frame = snapshot.frames.find(item => item.nodeId === nodeId && item.parentActivationId === parentActivationId);
+        for (const { nodeId, childIndex } of path) {
+          frame = snapshot.frames.find(item => item.nodeId === nodeId && item.parentActivationId === parentActivationId && item.parentChildIndex === childIndex);
           if (!frame) break;
           parentActivationId = frame.activationId;
         }
