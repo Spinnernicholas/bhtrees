@@ -1,13 +1,14 @@
 # BHTrees implementation plan
 
-Status: development started. The engine supports promise/timer/event/poll waits, nested any/all groups, and an injectable timer clock. The browser playground includes execution controls, an active-node list, inspection, event history, and cleanup counters. Validation: 24 Node tests and a headless Chrome smoke test pass. Phase 1 declarations/builds and Phase 2 reactive nodes/blackboards remain pending. The playground is not yet the full debugger controller or renderer extension API. See README.md for capabilities and limitations.
+Status: development started. The engine supports tick actions, promise/timer/event/poll waits, nested any/all groups, and an injectable timer clock. Nodes support tri-state reactive inheritance; sequences preserve reached running children and interrupt unreachable branches. The browser playground includes execution controls, tree inspection, event history, and a simulation clock. The core now uses strict TypeScript with generated ESM JavaScript and declarations; remaining Phase 2 nodes/blackboards remain pending. The playground is not yet the full debugger controller or renderer extension API. See README.md for capabilities and limitations.
 
 ## Goals
 
 Build a JavaScript behavior tree library that runs in Node.js, browsers, and
 Adventure Land, with no third-party dependencies in the library or bundled UI.
-Use JavaScript with JSDoc and publish TypeScript declarations. Prefer Node built-in
-tools for development, tests, and distribution generation as well.
+Use TypeScript for the core and compile to ESM JavaScript with generated TypeScript
+declarations. TypeScript is a development-only dependency; use Node built-in tools
+for runtime tests and host scripts. Examples and runtime tests remain JavaScript.
 
 Required capabilities:
 
@@ -389,6 +390,8 @@ extensions, versions, dependencies, status, and errors through the debugger prot
 ### Phase 1: Contracts and executable vertical slice
 
 - Scaffold modules, built-in tests, declarations strategy, and build entry points.
+  Implemented: strict TypeScript core, generated ESM/declarations in `dist/`,
+  package exports, consumer type checks, and automatic builds for tests/examples.
 - Implement definitions, frames, memory sequence, actions, result data, and a fake clock.
 - Demonstrate input/output passing, a promise wait, cancellation, and engine stepping.
 - Write public contracts for lifecycle, errors, timing, and scope ownership.

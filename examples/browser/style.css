@@ -1,6 +1,9 @@
 :root { color-scheme: dark; font: 16px/1.5 system-ui, sans-serif; background: #101824; color: #e4ecf5; }
-body { max-width: 1120px; margin: auto; padding: 36px 24px; }
-h1 { font-size: clamp(2rem, 5vw, 3.5rem); letter-spacing: -.04em; margin: 8px 0; }
+* { box-sizing: border-box; }
+body { max-width: 1600px; margin: auto; padding: 16px 24px; }
+header { margin-bottom: 16px; }
+header p { margin: 4px 0; font-size: .85rem; }
+h1 { font-size: 1.5rem; letter-spacing: -.04em; margin: 4px 0; }
 h2 { font-size: 1.05rem; margin-top: 0; }
 p { color: #aebfd1; }
 .eyebrow { color: #67e0b7; letter-spacing: .15em; font-size: .75rem; }
@@ -13,7 +16,7 @@ button:disabled { opacity: .4; cursor: default; }
 button:focus-visible, input:focus-visible { outline: 3px solid #ffda83; outline-offset: 3px; }
 input[type=text], input:not([type]) { background: #101824; border: 1px solid #52677f; color: inherit; padding: 8px; border-radius: 6px; width: 150px; }
 #status { margin-left: auto; color: #67e0b7; }
-.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.columns { display: grid; grid-template-columns: 1fr; gap: 20px; }
 .columns > section { min-width: 0; }
 .tree-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .tree-toolbar h2 { margin: 0; }
@@ -47,7 +50,6 @@ summary { cursor: pointer; color: #aebfd1; font-size: .85rem; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85rem; }
 #history { max-height: 250px; overflow-y: auto; padding-left: 24px; font: .85rem/1.8 ui-monospace, monospace; }
 small, .note { color: #aebfd1; font-size: .8rem; font-weight: normal; }
-@media (max-width: 700px) { .columns { grid-template-columns: 1fr; gap: 0; } body { padding: 20px 14px; } }
 
 /* Sibling connectors meet at a shared seam, without card spacing. */
 [data-view=blocks] .node-children > .tree-node { margin: 0; border-radius: 0; }
@@ -65,4 +67,29 @@ small, .note { color: #aebfd1; font-size: .8rem; font-weight: normal; }
 .crystal { width: 28px; height: 28px; display: grid; place-items: center; background: #25374d; border: 2px solid #a0bfef; color: #d8e7ff; border-radius: 3px 12px; font-size: .75rem; }
 .crystal[hidden] { display: none; }
 #agent { left: 12%; top: 50%; color: #67e0b7; font-size: 25px; text-shadow: 0 0 15px #67e0b780; }
-#tree { max-height: 740px; overflow: auto; padding: 2px; }
+/* Keep the three primary surfaces together; only the tree contents scroll. */
+.playground { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); grid-template-rows: auto minmax(0, 1fr); gap: 12px; height: calc(100dvh - 144px); min-height: 440px; }
+.playground > section { min-width: 0; min-height: 0; margin: 0; padding: 14px; }
+.controls { grid-column: 1 / -1; }
+.controls p { font-size: .75rem; margin: 6px 0; }
+.toolbar, .inputs { gap: 8px; }
+.inputs { font-size: .8rem; }
+.simulation, .tree-panel { display: flex; flex-direction: column; }
+.simulation #world { flex: 1; min-height: 100px; height: auto; margin-top: 12px; }
+#game-status { margin: 8px 0 0; font-size: .85rem; }
+.simulation .tree-hint { margin: 8px 0 0; }
+.tree-panel .tree-hint { margin: 8px 0; }
+#tree { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; margin: 0; padding: 2px; scrollbar-gutter: stable; }
+#tree:focus-visible { outline: 3px solid #ffda83; outline-offset: 2px; }
+#resources { margin: 8px 0 0; font-size: .75rem; }
+@media (max-width: 700px) {
+  body { padding: 10px; }
+  header { margin-bottom: 10px; }
+  header > p:not(.eyebrow) { display: none; }
+  h1 { font-size: 1.2rem; }
+  .playground { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 170px minmax(0, 1fr); height: calc(100dvh - 90px); min-height: 570px; gap: 8px; }
+  .playground > section { padding: 10px; }
+  .toolbar button { padding: 6px 9px; font-size: .8rem; }
+  .simulation .tree-hint { display: none; }
+  .tree-toolbar { gap: 8px; }
+}

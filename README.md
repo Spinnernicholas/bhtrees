@@ -5,7 +5,7 @@ Development has started with the first engine slice; see [PLAN.md](PLAN.md) for 
 full roadmap. The API is experimental.
 
 ```js
-import { action, createRunner } from './src/index.js';
+import { action, createRunner } from './dist/index.js';
 
 const tree = action({
   id: 'hello',
@@ -15,8 +15,21 @@ const runner = createRunner(tree, { input: { name: 'world' } });
 console.log(runner.tick().output);
 ```
 
-Run `npm test` for the Node built-in test suite and `npm run example` for a sequence
-with sibling data bindings. No install step or third-party packages are required.
+Run `npm ci` once to install the TypeScript development compiler, then `npm run build`
+to compile `src/*.ts` into ESM JavaScript and generated declarations in `dist/`.
+The published package has no runtime dependencies. Package imports use `bhtrees`;
+local examples import the compiled `dist/index.js` entry point.
+
+Run `npm test` for declaration checks and the Node built-in test suite, or
+`npm run example` for a sequence with sibling data bindings. Tests and example
+commands build automatically. `npm run typecheck` checks source without emitting;
+`npm run build -- --watch` rebuilds during development. `npm pack` builds the
+JavaScript and declarations before packaging.
+
+The public types cover definitions, action contexts/results, waits, clocks, runners,
+and snapshots. Application inputs, outputs, locals, services, and clock handles
+remain permissive (`Value`, currently `any`); the engine does not infer data schemas
+between nodes.
 
 ## Browser playground
 
@@ -24,29 +37,32 @@ Run `npm run example:browser`, then open **http://127.0.0.1:8080** in a modern b
 The server binds to localhost only. Set `PORT` to use another port. Use the HTTP
 server instead of opening the HTML as a local file, so ES-module imports work.
 
-Click **Start / restart** to launch a rover on three crystal-recovery expeditions.
+Click **Start** to launch a rover on three crystal-recovery expeditions; **Reset** returns it to idle.
 Each expedition scans for the nearest deposit, travels to it, charges a drill,
 collects a crystal, returns to base, and deposits its cargo. **Send radar ping**
 skips the scan delay. The world shows movement, remaining deposits, cargo, and deliveries.
-Pause freezes simulated movement while timers continue settling into the resume queue.
-Step advances the tree one transition; movement resumes with Continue.
+The example uses traditional tick actions: each evaluation returns `RUNNING`, `SUCCESS`,
+or `FAILURE`, with no wait descriptors or resume handlers. Movement runs in the world
+update loop from the target and speed set by the tree. Scan and drill delays use simulation time.
+Pause freezes the simulation. Step advances one tree transition; reevaluating a running
+action also advances simulation time by 0.1 seconds. Continue resumes automatic ticks.
 
 **Blocks** (default) displays nested sequences with flush sibling seams and interlocking
 connector tabs. **List** gives an indented alternative. Select a node to inspect its
 activation. Both retain the dark/slate palette and mint active indicators. These are
-execution views, not a drag-and-drop editor. Resource counters expose cleanup;
+execution views, not a drag-and-drop editor. The simulation clock is shown below the tree;
 the last 100 UI observations appear in event history.
 
 This is an initial list/block debugger example, not the full debugger controller or
 renderer plugin API. Node and headless Chrome checks cover its execution controls,
 connected block geometry, the complete agent mission, restart, and cancellation. To rerun the real
-browser smoke test, use `node scripts/check-browser.js <path-to-Chrome-or-Edge>`.
+browser smoke test, build with `npm run build`, then use `node scripts/check-browser.js <path-to-Chrome-or-Edge>`.
 
 Implemented: immutable action/sequence definitions, isolated runner frames, explicit
 inputs/outputs and sequence bindings, local activation state, promise/timer/event/poll waits with named
 resume handlers, cancellation, bounded ticks, snapshots, and single-transition stepping.
 
-`tick()` runs until completion, a wait, or its step budget. Promise settlement only
+`tick()` runs until completion, a running action, a wait, or its step budget. Promise settlement only
 queues a continuation; call `tick()` again to process it. Terminal runners do not
 restart. `pause()` prevents normal ticks; `step()` pauses and performs one engine
 transition. `continue()` allows subsequent ticks. User callbacks run synchronously
@@ -57,6 +73,62 @@ external operations must be stopped by the action's cancel hook.
 Inputs, outputs, and application values are immutable by contract, not deeply copied.
 Snapshots freeze their structural containers but are not historical deep snapshots.
 Services are injected live APIs. Each runner owns its execution locals and scopes.
+
+## Tick actions
+
+Use `action({ id, tick })` for a traditional tick-based action. Its `tick(ctx)` function
+is evaluated at most once per runner tick or debugger step. Return `RUNNING` to be
+evaluated again on a later tick; return `SUCCESS` or `FAILURE` to finish. Use
+`ctx.success(output)` or `ctx.failure(output)` when a result includes data.
+`ctx.local` persists for that activation. A memory sequence retains its active child.
+Choose either `tick` or `enter` for an action; the existing `enter`/`resume` API remains
+available for asynchronous waits.
+
+## Reactivity
+
+Every node accepts `reactive: true | false | 'inherited'`. The default is
+`'inherited'`; the root inherits `false`.
+
+- `true`: a sequence starts traversal at its first child on each logical tick.
+- `false`: it resumes from its saved running child.
+- `'inherited'`: it uses its parent's effective setting. An explicit setting overrides it.
+
+Reactivity changes only traversal position. If traversal reaches the same running
+child, that activation keeps its locals, input, descendant progress, and registered
+waits. A child with `reactive: false` retains its own position even under a reactive
+parent. Actions have no child traversal to rewind; reactivity does not rerun an
+action's `enter` function. Completed actions are evaluated as fresh activations when
+revisited, so put repeatable guards before running work in reactive sequences.
+
+If an earlier child fails or returns `RUNNING`, any previously running branch that
+is no longer reached is halted child-first. Its waits are disposed, queued resumptions
+discarded, and started actions receive `cancel(ctx, 'interrupted')` once. Late
+notifications are ignored. Cleanup failures produce an `errored` runner after the
+remaining cleanup is attempted. Existing inputs stay fixed for a retained activation;
+new activations evaluate their input binding again.
+
+```js
+import { action, sequence, RUNNING, SUCCESS, FAILURE } from './dist/index.js';
+
+const guardedWork = sequence({
+  id: 'guarded-work', reactive: true,
+  steps: [
+    { node: action({ id: 'allowed', tick: c => c.services.allowed() ? SUCCESS : FAILURE }) },
+    { node: action({ id: 'work', reactive: false, tick(c) {
+      c.local.count = (c.local.count ?? 0) + 1;
+      return c.local.count < 3 ? RUNNING : SUCCESS;
+    } }) }
+  ]
+});
+
+```
+
+A logical tick ends when traversal returns `RUNNING` or a terminal result. Debugger
+steps and exhausted transition budgets continue an unfinished traversal, so they do
+not keep rewinding guards before reaching their running child. Pause does
+not start a new traversal. Terminal roots remain terminal until a new runner is created.
+Snapshots include each live frame's configured `reactive`, `effectiveReactive`, and
+`onTraversal` flag, including retained branches while earlier guards are being checked.
 
 ## Timer and event waits
 
@@ -123,5 +195,5 @@ previously installed child subscriptions. Snapshots also report `poll`, `any`, o
 
 Not implemented yet: remaining node/resume types, blackboards, JSON/YAML documents,
 configuration and extensions, debugger controller/UI, recordings/checkpoints,
-declarations, standalone bundles, or environment adapters. The engine uses standard host timers by default and no DOM or game
+standalone bundles or environment adapters. The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.

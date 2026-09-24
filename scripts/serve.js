@@ -14,15 +14,15 @@ export function createExampleServer() {
         response.writeHead(302, { Location: '/examples/browser/index.html', 'Cache-Control': 'no-store' }).end();
         return;
       }
-      // Only serve public example assets and the source modules they import.
-      if (!pathname.startsWith('/examples/browser/') && !pathname.startsWith('/src/')) {
+      // Only serve public example assets and the compiled modules they import.
+      if (!pathname.startsWith('/examples/browser/') && !pathname.startsWith('/dist/')) {
         response.writeHead(404).end(); return;
       }
       const file = await realpath(resolve(root, `.${pathname}`));
       const local = relative(root, file);
       if (local.startsWith('..') || isAbsolute(local) || !types[extname(file)]) { response.writeHead(404).end(); return; }
       const portable = local.replaceAll('\\', '/');
-      if (!portable.startsWith('src/') && !portable.startsWith('examples/browser/')) { response.writeHead(404).end(); return; }
+      if (!portable.startsWith('dist/') && !portable.startsWith('examples/browser/')) { response.writeHead(404).end(); return; }
       const bytes = await readFile(file);
       response.writeHead(200, { 'Content-Type': `${types[extname(file)]}; charset=utf-8`, 'Cache-Control': 'no-store' });
       response.end(request.method === 'HEAD' ? undefined : bytes);

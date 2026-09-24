@@ -1,4 +1,4 @@
-import { action, createRunner, RUNNING } from '../src/index.js';
+import { action, createRunner, RUNNING } from '../dist/index.js';
 
 // A tiny application event source; real applications can adapt their own emitter.
 const listeners = new Set();

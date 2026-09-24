@@ -1,4 +1,4 @@
-import { action, sequence, createRunner } from '../src/index.js';
+import { action, sequence, createRunner } from '../dist/index.js';
 
 const tree = sequence({ id: 'greeting', steps: [
   { node: action({ id: 'name', enter: ctx => ctx.success(ctx.input.name) }), save: 'name' },

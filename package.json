@@ -3,8 +3,34 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Dependency-free behavior trees with explicit execution and debugging",
-  "exports": { ".": "./src/index.js" },
-  "files": ["src", "README.md"],
-  "scripts": { "test": "node --test", "example": "node examples/basic.js", "example:browser": "node scripts/serve.js" },
-  "engines": { "node": ">=22" }
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "npm run test:types && node --test",
+    "example": "node examples/basic.js",
+    "example:browser": "node scripts/serve.js",
+    "build": "tsc -p tsconfig.json",
+    "pretest": "npm run build",
+    "preexample": "npm run build",
+    "preexample:browser": "npm run build",
+    "prepack": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:types": "tsc -p type-tests/tsconfig.json"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "types": "./dist/index.d.ts",
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
 }

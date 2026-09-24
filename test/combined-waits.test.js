@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { action, createRunner, RUNNING, FAILURE } from '../src/index.js';
+import { action, createRunner, RUNNING, FAILURE } from '../dist/index.js';
 
 const make = enter => createRunner(action({ id: 'wait', enter, resume: {
   done: (ctx, value) => ctx.success(value), failed: (ctx, error) => ctx.failure(error.message)

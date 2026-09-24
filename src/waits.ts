@@ -1,47 +1,51 @@
+import type { Value, Clock, WaitDescriptor, WaitOptions } from './types.js';
+
 import { RUNNING } from './nodes.js';
 
-const descriptor = (kind, fields, options = {}) => ({ status: RUNNING, kind, ...fields,
+type WaitFields = WaitDescriptor extends infer D ? D extends WaitDescriptor ? Omit<D, 'status' | 'resolve' | 'reject'> : never : never;
+const descriptor = (fields: WaitFields, options: WaitOptions = {}): WaitDescriptor => ({ status: RUNNING, ...fields,
   resolve: options.resume ?? options.resolve, reject: options.reject });
 
 export const waits = Object.freeze({
-  promise(promise, options) {
+  promise(promise: PromiseLike<Value>, options?: WaitOptions) {
     if (!promise || typeof promise.then !== 'function') throw new TypeError('Expected a promise');
     // A race may settle before this descriptor is registered. Observe rejection now.
     Promise.resolve(promise).catch(() => {});
-    return descriptor('promise', { promise }, options);
+    return descriptor({ kind: 'promise', promise }, options);
   },
-  timer(ms, options) {
+  timer(ms: number, options?: WaitOptions & { value?: Value }) {
     if (!Number.isFinite(ms) || ms < 0) throw new RangeError('Timer delay must be finite and nonnegative');
-    return descriptor('timer', { ms, value: options?.value }, options);
+    return descriptor({ kind: 'timer', ms, value: options?.value }, options);
   },
-  event(subscribe, options) {
+  event(subscribe: (notify: (value?: Value) => void) => () => void, options?: WaitOptions) {
     if (typeof subscribe !== 'function') throw new TypeError('Expected a subscription function');
-    return descriptor('event', { subscribe }, options);
+    return descriptor({ kind: 'event', subscribe }, options);
   },
-  poll(predicate, options) {
+  poll(predicate: () => Value, options?: WaitOptions) {
     if (typeof predicate !== 'function') throw new TypeError('Expected a polling function');
-    return descriptor('poll', { predicate }, options);
+    return descriptor({ kind: 'poll', predicate }, options);
   },
-  any(children, options) { return group('any', children, options); },
-  all(children, options) { return group('all', children, options); }
+  any(children: readonly WaitDescriptor[], options?: WaitOptions) { return group('any', children, options); },
+  all(children: readonly WaitDescriptor[], options?: WaitOptions) { return group('all', children, options); }
 });
 
-function group(kind, children, options) {
+function group(kind: 'any' | 'all', children: readonly WaitDescriptor[], options?: WaitOptions) {
   if (!Array.isArray(children) || children.length === 0) throw new TypeError('Combined waits require at least one child');
-  return descriptor(kind, { children: [...children] }, options);
+  return descriptor({ kind, children: [...children] }, options);
 }
 
 /** Registrations only notify; disposal and execution happen at engine boundaries. */
-export function registerWait(spec, clock, notify) {
-  let settled = false, disposed = false, disposer;
-  const children = [];
-  function finish(value, rejected = false) {
+export function registerWait(spec: WaitDescriptor, clock: Clock, notify: (value: Value, rejected: boolean) => void): WaitRegistration {
+  let settled = false, disposed = false;
+  let disposer: (() => void) | undefined;
+  const children: WaitRegistration[] = [];
+  function finish(value: Value, rejected = false) {
     if (!disposed && !settled) { settled = true; notify(value, rejected); }
   }
   function dispose() {
     if (disposed) return;
     disposed = true;
-    const errors = [];
+    const errors: unknown[] = [];
     for (const child of children) {
       try { child.dispose(); } catch (error) { errors.push(error); }
     }
@@ -100,3 +104,5 @@ export function registerWait(spec, clock, notify) {
     }
   };
 }
+
+export interface WaitRegistration { dispose(): void; poll(): void }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { action, sequence, createRunner, SUCCESS, FAILURE, RUNNING } from '../src/index.js';
+import { action, sequence, createRunner, SUCCESS, FAILURE, RUNNING } from '../dist/index.js';
 
 function deferred() {
   let resolve, reject;
@@ -60,6 +60,36 @@ test('step executes one boundary and tick respects pause', () => {
   assert.equal(calls, 0);
   assert.equal(runner.step().status, SUCCESS);
   assert.equal(calls, 1);
+});
+
+test('tick actions return RUNNING once per drive and retain local state', () => {
+  let calls = 0;
+  const runner = createRunner(action({ id: 'count', tick(c) {
+    calls++;
+    c.local.count = (c.local.count ?? 0) + 1;
+    return c.local.count < 3 ? RUNNING : c.success(c.local.count);
+  } }));
+  assert.equal(runner.tick().frames[0].phase, 'running');
+  assert.equal(calls, 1);
+  runner.pause(); runner.tick();
+  assert.equal(calls, 1);
+  const before = runner.snapshot().transitions;
+  assert.equal(runner.step().transitions, before + 1);
+  assert.equal(calls, 2);
+  assert.equal(runner.snapshot().paused, true);
+  runner.continue();
+  assert.equal(runner.tick().output, 3);
+  runner.tick();
+  assert.equal(calls, 3);
+});
+
+test('tick actions propagate bare success and failure through sequences', () => {
+  const runner = createRunner(sequence({ id: 'root', steps: [
+    { node: action({ id: 'yes', tick: () => SUCCESS }) },
+    { node: action({ id: 'no', tick: () => FAILURE }) },
+    { node: action({ id: 'never', tick() { assert.fail('Must not run'); } }) }
+  ] }));
+  assert.equal(runner.tick().status, FAILURE);
 });
 
 test('failure short circuits a sequence with its output', () => {

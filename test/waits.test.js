@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { action, createRunner, RUNNING, SUCCESS } from '../src/index.js';
+import { action, createRunner, RUNNING, SUCCESS } from '../dist/index.js';
 
 function fakeClock() {
   let now = 0, next = 0;

@@ -23,6 +23,7 @@ export function mountTreeView({ target, tree, labels = {}, onSelect = () => {} }
     header.addEventListener('click', select);
     row.append(header);
     const meta = element('div', 'node-meta', definition.id);
+    meta.append(element('span', 'node-port', `reactive: ${definition.reactive ?? 'inherited'}`));
     if (binding?.save) meta.append(element('span', 'node-port', `output → ${binding.save}`));
     row.append(meta);
     if (definition.steps) {
@@ -52,7 +53,7 @@ export function mountTreeView({ target, tree, labels = {}, onSelect = () => {} }
         const frame = snapshot.frames.find(frame => frame.nodeId === definition.id);
         row.classList.toggle('active', !!frame);
         status.textContent = frame
-          ? `${frame.phase}${frame.waitingOn ? ` · ${frame.waitingOn}` : ''}`
+          ? `${frame.phase === 'running' ? 'RUNNING' : frame.phase}${frame.waitingOn ? ` · ${frame.waitingOn}` : ''}`
           : definition === tree ? snapshot.status : 'inactive';
       }
     },
