@@ -1,5 +1,5 @@
-import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, delay, timeout, cooldown, subtree, parallel, createBlackboard, createRunner, SUCCESS, RUNNING } from 'bhtrees';
-import type { ActionContext, Clock, NodeDefinition, RunnerSnapshot, WaitDescriptor } from 'bhtrees';
+import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, delay, timeout, cooldown, subtree, parallel, createRegistry, encodeTree, decodeTree, toTreeDocument, fromTreeDocument, createBlackboard, createRunner, SUCCESS, RUNNING } from 'bhtrees';
+import type { ActionImplementation, ActionContext, Clock, NodeDefinition, RunnerSnapshot, WaitDescriptor } from 'bhtrees';
 
 const clock: Clock = { setTimeout: () => ({ id: 1 }), clearTimeout: handle => { void handle; } };
 const work = action({
@@ -153,3 +153,15 @@ createRunner(parallel({ id: 'path-parallel', steps: [{ node: pathTree }],
 sequence({ id: 'bad-path', steps: [], output: { path: 'vars.value' } });
 // @ts-expect-error Path segments are strings or numbers.
 subtree({ id: 'bad-segment', child: tree, input: { path: [true] } });
+
+const registry = createRegistry();
+const implementation: ActionImplementation = { tick: () => SUCCESS };
+registry.registerAction('app.success', implementation, 1);
+registry.registerCondition('app.ready', ctx => ctx.input === true);
+const portable = action({ id: 'portable', ...implementation });
+createRunner(decodeTree(encodeTree(portable, { registry }), { registry }));
+fromTreeDocument(toTreeDocument(portable, { registry }), { registry });
+// @ts-expect-error Action implementations require enter or tick.
+registry.registerAction('app.invalid', {});
+// @ts-expect-error Conditions are synchronous boolean predicates.
+registry.registerCondition('app.async', async () => true);

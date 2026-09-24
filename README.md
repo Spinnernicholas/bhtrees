@@ -378,7 +378,7 @@ Input and output bindings accept either their existing function or a plain data
 descriptor: `{ path: ['vars', 'target', 'position'] }`. Paths are arrays of literal
 string keys and nonnegative safe-integer indices. They can be represented directly
 in JSON/YAML; they are never JavaScript expressions. This supplies portable binding
-data, but does not yet provide a tree document loader or serializer.
+data and can be used with the JSON tree document APIs below.
 
 ```js
 const trip = sequence({ id: 'trip', steps: [
@@ -411,6 +411,54 @@ rules as functions: a retained child keeps its original input.
 Default composite output mappings are now declarative (`['last']` for sequences,
 selectors, and subtree calls; `['results']` for parallel nodes). Existing function
 bindings keep their original arguments and behavior.
+
+## Portable JSON trees
+
+`createRegistry()` associates implementation names with code. Use
+`registerAction(name, implementation, version = 1)` or
+`registerCondition(name, test, version = 1)`. Registrations belong to that registry;
+name collisions are rejected across both kinds. Actions include their enter/tick,
+resume, and cancel functions. Register the same function references used to construct
+the tree; export matches all action callbacks, not only the entry callback. If code
+is registered under multiple names, export selects the first matching registration.
+
+```js
+import { action, createRegistry, encodeTree, decodeTree, createRunner } from './dist/index.js';
+
+const registry = createRegistry();
+const implementation = { tick: ctx => ctx.success(`Hello, ${ctx.input}!`) };
+registry.registerAction('app.greet', implementation, 1);
+const tree = action({ id: 'greet', ...implementation });
+const text = encodeTree(tree, { registry });
+const restored = decodeTree(text, { registry });
+console.log(createRunner(restored, { input: 'world' }).tick().output);
+```
+
+`encodeTree`/`decodeTree` handle JSON text; `toTreeDocument`/`fromTreeDocument`
+handle canonical objects. Documents use `{ format: 'bhtrees', version: 1,
+kind: 'tree', root, nodes }`. `root`, child links, and step links reference node IDs
+in the flat `nodes` array, preserving shared definition identity after decoding.
+Each action/condition record includes `implementation` and `implementationVersion`.
+Built-in structural node options and declarative path bindings round-trip directly.
+Infinite retry/repeat limits use the document string `'unbounded'`.
+
+These APIs capture definitions only. Runtime inputs, blackboards, services, waits,
+and execution frames are supplied separately. They never serialize function source
+or run action/condition callbacks during decoding. Unregistered leaf implementations
+and function bindings fail strict export. Use declarative bindings for portable
+input/output mappings.
+
+`DocumentError` includes a `path` such as `$.nodes[0].steps[1].input`. Unknown fields,
+unsupported types/versions, invalid options, missing references, duplicate IDs,
+cycles, and unreachable definitions fail validation. Implementation versions must
+match exactly; automatic migration is not implemented. Limits are 10,000 nodes,
+128 child-reference edges in a path, and 1,000,000 characters for JSON text. JSON
+parsing uses the platform parser; this is not a YAML codec.
+
+Run `npm run build`, then `node examples/documents.js` for a complete example.
+This first document slice supports tree documents and registered action/condition
+implementations. Custom node factories/value serializers, migrations, YAML,
+configuration documents, checkpoints, and recordings remain planned.
 
 ## Reactivity
 
@@ -561,7 +609,7 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
-Not implemented yet: JSON/YAML documents,
+Not implemented yet: YAML, custom type migrations, non-tree documents,
 configuration and extensions, debugger controller/UI, recordings/checkpoints,
 standalone bundles or environment adapters. The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.

@@ -6,7 +6,7 @@ async function until(predicate, message) {
   throw new Error(message);
 }
 try {
-  const { inverter, condition, createRunner, action, sequence, subtree, parallel, RUNNING, SUCCESS } = await import('../../dist/index.js');
+  const { inverter, condition, createRunner, action, sequence, subtree, parallel, createRegistry, encodeTree, decodeTree, RUNNING, SUCCESS } = await import('../../dist/index.js');
   const { mountTreeView } = await import('./tree-view.js');
   const target = document.createElement('ol');
   const tree = inverter({ id: 'inverted', child: condition({ id: 'predicate', test: () => false }) });
@@ -44,6 +44,13 @@ try {
   check(branchRows[0].classList.contains('active') && !branchRows[1].classList.contains('active'),
     'Parallel rows must distinguish repeated definitions by child position');
   parallelRunner.cancel(); parallelView.dispose();
+  const registry = createRegistry();
+  const portableTick = c => c.success(c.input);
+  registry.registerAction('smoke.echo', { tick: portableTick });
+  const portable = action({ id: 'portable', tick: portableTick });
+  const decoded = decodeTree(encodeTree(portable, { registry }), { registry });
+  check(createRunner(decoded, { input: 'JSON in browser' }).tick().output === 'JSON in browser',
+    'Portable JSON tree failed in browser');
   await until(() => frame.contentDocument?.querySelector('#history li'), 'Application did not initialize');
   const doc = frame.contentDocument;
   check(frame.contentWindow.getComputedStyle(doc.querySelector('.playground')).display === 'grid', 'Stylesheet did not load');
