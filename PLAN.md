@@ -1,6 +1,6 @@
 # BHTrees implementation plan
 
-Status: development started. The engine supports optional caller-owned observable blackboards, threshold-based parallel branches with explicit output reducers, reusable subtree calls with explicit bindings, synchronous boolean conditions, memory/reactive selectors, inverter/force-result, retry/repeat, and delay/timeout/cooldown decorators, tick actions, promise/timer/event/poll/callback-token waits, nested any/all groups, and an injectable timer clock. Nodes support tri-state reactive inheritance; sequences and selectors preserve reached running children and interrupt unreachable branches. The browser playground includes execution controls, tree inspection, event history, and a simulation clock. The core now uses strict TypeScript with generated ESM JavaScript and declarations; remaining Phase 2 declarative binding work remains pending. The playground is not yet the full debugger controller or renderer extension API. See README.md for capabilities and limitations.
+Status: development started. The engine supports declarative path bindings, optional caller-owned observable blackboards, threshold-based parallel branches with explicit output reducers, reusable subtree calls with explicit bindings, synchronous boolean conditions, memory/reactive selectors, inverter/force-result, retry/repeat, and delay/timeout/cooldown decorators, tick actions, promise/timer/event/poll/callback-token waits, nested any/all groups, and an injectable timer clock. Nodes support tri-state reactive inheritance; sequences and selectors preserve reached running children and interrupt unreachable branches. The browser playground includes execution controls, tree inspection, event history, and a simulation clock. The core now uses strict TypeScript with generated ESM JavaScript and declarations; the planned Phase 2 runtime/data features are implemented and covered by deterministic tests. The playground is not yet the full debugger controller or renderer extension API. See README.md for capabilities and limitations.
 
 ## Goals
 
@@ -418,7 +418,9 @@ cancelled work; stepping pauses at a documented transition; no core host globals
   runner snapshot inspection, and explicit sharing/isolation.
   Callback-token waits now support one-shot resolve/reject, named continuations,
   pre-registration settlement, cancellation, and nested any/all composition.
-  Next: declarative bindings.
+  Declarative path bindings now cover composite inputs/outputs, subtree mappings,
+  and parallel reducers alongside function bindings, without expression evaluation.
+  Next: Phase 3 canonical documents, JSON, registries, and strict export errors.
 - Add optional blackboards, declarative bindings, subtree scopes, and output reducers.
 
 Gate: deterministic scheduler tests cover cancellation races, simultaneous waits,

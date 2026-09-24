@@ -69,23 +69,27 @@ export type ActionOptions = ActionBase & (
 export type ActionDefinition = Readonly<ActionOptions & {
   type: 'action'; reactive: Reactive; resume: Readonly<Record<string, ResumeHandler>>;
 }>;
+export interface PathBinding { readonly path: readonly (string | number)[] }
+export type ScopeBinding = ((scope: Scope) => Value) | PathBinding;
+export type SubtreeOutputBinding = ((scope: Scope, result: Readonly<Completion>) => Value) | PathBinding;
+export type ParallelOutputBinding = ((results: ParallelResults, status: Completion['status']) => Value) | PathBinding;
 export interface Scope { input: Value; vars: Readonly<Record<string, Value>>; last: Value }
 export interface SequenceStep {
   node: NodeDefinition;
-  input?: (scope: Scope) => Value;
+  input?: ScopeBinding;
   save?: string;
 }
 export interface SequenceOptions {
   id: string;
   steps: readonly SequenceStep[];
-  output?: (scope: Scope) => Value;
+  output?: ScopeBinding;
   reactive?: Reactive;
 }
 export interface SequenceDefinition {
   readonly type: 'sequence';
   readonly id: string;
   readonly steps: readonly Readonly<SequenceStep>[];
-  readonly output: (scope: Scope) => Value;
+  readonly output: ScopeBinding;
   readonly reactive: Reactive;
 }
 export type ConditionContext = Pick<ActionContext, 'input' | 'local' | 'services' | 'blackboard'>;
@@ -143,18 +147,18 @@ export interface TimedDecoratorDefinition extends Omit<DecoratorDefinition, 'typ
   readonly ms: number;
 }
 export interface SubtreeOptions extends DecoratorOptions {
-  input?: (scope: Scope) => Value;
+  input?: ScopeBinding;
   /** Runs for success and failure; maps output without changing status. */
-  output?: (scope: Scope, result: Readonly<Completion>) => Value;
+  output?: SubtreeOutputBinding;
 }
 export interface SubtreeDefinition extends Omit<DecoratorDefinition, 'type'> {
   readonly type: 'subtree';
-  readonly input?: (scope: Scope) => Value;
-  readonly output: (scope: Scope, result: Readonly<Completion>) => Value;
+  readonly input?: ScopeBinding;
+  readonly output: SubtreeOutputBinding;
 }
 export interface ParallelStep {
   node: NodeDefinition;
-  input?: (scope: Scope) => Value;
+  input?: ScopeBinding;
   /** Parallel branches expose outputs through the reducer, never shared save bindings. */
   save?: never;
 }
@@ -165,7 +169,7 @@ export interface ParallelOptions {
   successThreshold: number;
   failureThreshold: number;
   reactive?: Reactive;
-  output?: (results: ParallelResults, status: Completion['status']) => Value;
+  output?: ParallelOutputBinding;
 }
 export interface ParallelDefinition {
   readonly type: 'parallel';
@@ -174,7 +178,7 @@ export interface ParallelDefinition {
   readonly successThreshold: number;
   readonly failureThreshold: number;
   readonly reactive: Reactive;
-  readonly output: (results: ParallelResults, status: Completion['status']) => Value;
+  readonly output: ParallelOutputBinding;
 }
 export type NodeDefinition = ActionDefinition | ConditionDefinition | SequenceDefinition | SelectorDefinition | DecoratorDefinition | RetryDefinition | RepeatDefinition | TimedDecoratorDefinition | SubtreeDefinition | ParallelDefinition;
 /** Timer handles are opaque and owned by the injected host clock. */

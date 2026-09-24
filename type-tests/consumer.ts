@@ -142,3 +142,14 @@ action({ id: 'callback', enter(ctx) {
   ctx.wait.any([token]);
   return token.wait;
 }, resume: { done: (ctx, value) => ctx.success(value), failed: (ctx, error) => ctx.failure(error) } });
+
+const pathTree = sequence({ id: 'paths', steps: [
+  { node: tree, input: { path: ['input', 'items', 0] }, save: 'value' }
+], output: { path: ['vars', 'value'] } });
+createRunner(subtree({ id: 'path-call', child: pathTree, output: { path: ['result', 'output'] } }));
+createRunner(parallel({ id: 'path-parallel', steps: [{ node: pathTree }],
+  successThreshold: 1, failureThreshold: 1, output: { path: ['results', 0, 'output'] } }));
+// @ts-expect-error Declarative paths are segment arrays, not expressions.
+sequence({ id: 'bad-path', steps: [], output: { path: 'vars.value' } });
+// @ts-expect-error Path segments are strings or numbers.
+subtree({ id: 'bad-segment', child: tree, input: { path: [true] } });

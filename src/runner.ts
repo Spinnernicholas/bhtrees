@@ -1,3 +1,4 @@
+import { normalizeBinding, evaluateBinding } from './bindings.js';
 import type { Value, NodeDefinition, RunnerOptions, Runner, RunnerStatus, RunnerSnapshot,
   ActionContext, Scope, ActionResult, Completion, WaitKind, FramePhase } from './types.js';
 
@@ -63,7 +64,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
     if ('child' in node) validate(node.child, new Set([...ancestors, node]));
     if (node.type === 'sequence' || node.type === 'selector' || node.type === 'parallel') {
       for (const step of node.steps) {
-        if (step.input !== undefined && typeof step.input !== 'function') throw new TypeError('Invalid input binding');
+        if (step.input !== undefined) normalizeBinding(step.input, 'input binding');
         if (step.save !== undefined && typeof step.save !== 'string') throw new TypeError('Invalid save binding');
         validate(step.node, new Set([...ancestors, node]));
       }
@@ -338,7 +339,8 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
         if (resultStatus) {
           // Cleanup precedes the reducer; a cleanup error is an execution error.
           haltChildren(frame, 'parallel-complete');
-          const output = frame.node.output(Object.freeze([...results]), resultStatus);
+          const completed = Object.freeze([...results]);
+          const output = evaluateBinding(frame.node.output, { results: completed, status: resultStatus }, [completed, resultStatus]);
           complete(frame, { status: resultStatus, output });
         } else { frame.index++; frame.phase = 'enter'; }
         return true;
@@ -348,7 +350,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
       const binding = frame.node.steps[frame.index];
       const retained = frame.children.get(frame.index);
       const branchScope: Scope = { input: frame.input, vars: Object.freeze(Object.create(null)), last: undefined };
-      const input = retained ? retained.input : binding.input ? binding.input(branchScope) : frame.input;
+      const input = retained ? retained.input : binding.input ? evaluateBinding(binding.input, branchScope, [branchScope]) : frame.input;
       frame.phase = 'child';
       push(binding.node, input, frame);
       return true;
@@ -384,7 +386,9 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
         const result = frame.childResult!;
         if (frame.node.type === 'subtree') {
           frame.last = result.output;
-          const output = frame.node.output(scope(frame), Object.freeze({ ...result }));
+          const resultScope = scope(frame);
+          const completion = Object.freeze({ ...result });
+          const output = evaluateBinding(frame.node.output, { ...resultScope, result: completion }, [resultScope, completion]);
           complete(frame, { status: result.status, output });
           return true;
         }
@@ -420,7 +424,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
         frame.phase = 'child';
         const retained = frame.children.get(frame.index);
         const input = retained ? retained.input : frame.node.type === 'subtree' && frame.node.input
-          ? frame.node.input(scope(frame)) : frame.input;
+          ? evaluateBinding(frame.node.input, scope(frame), [scope(frame)]) : frame.input;
         push(frame.node.child, input, frame);
       }
       return true;
@@ -435,7 +439,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
       if (result.status === SUCCESS && binding.save !== undefined) frame.vars[binding.save] = result.output;
       frame.last = result.output;
       if (frame.node.type === 'selector' && result.status === SUCCESS) {
-        complete(frame, { status: SUCCESS, output: frame.node.output(scope(frame)) });
+        complete(frame, { status: SUCCESS, output: evaluateBinding(frame.node.output, scope(frame), [scope(frame)]) });
         return true;
       }
       frame.index++;
@@ -444,12 +448,12 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
     }
     if (frame.index === frame.node.steps.length) {
       complete(frame, frame.node.type === 'sequence'
-        ? { status: SUCCESS, output: frame.node.output(scope(frame)) }
+        ? { status: SUCCESS, output: evaluateBinding(frame.node.output, scope(frame), [scope(frame)]) }
         : { status: FAILURE, output: frame.last });
     } else {
       const binding = frame.node.steps[frame.index];
       const retained = frame.children.get(frame.index);
-      const childInput = retained ? retained.input : binding.input ? binding.input(scope(frame)) : frame.input;
+      const childInput = retained ? retained.input : binding.input ? evaluateBinding(binding.input, scope(frame), [scope(frame)]) : frame.input;
       frame.phase = 'child';
       push(binding.node, childInput, frame);
     }

@@ -1,3 +1,4 @@
+import { normalizeBinding } from './bindings.js';
 import type { Reactive, ActionOptions, ActionDefinition, SequenceOptions, SequenceDefinition,
   SelectorOptions, SelectorDefinition, ConditionOptions, ConditionDefinition,
   DecoratorKind, DecoratorOptions, DecoratorDefinition,
@@ -25,22 +26,24 @@ export function action({ id, enter, tick, resume = {}, cancel, reactive = 'inher
   return Object.freeze({ type: 'action', id, enter, tick, resume: Object.freeze({ ...resume }), cancel, reactive }) as ActionDefinition;
 }
 
-export function sequence({ id, steps, output = scope => scope.last, reactive = 'inherited' }: SequenceOptions): SequenceDefinition {
+export function sequence({ id, steps, output = { path: ['last'] }, reactive = 'inherited' }: SequenceOptions): SequenceDefinition {
   checkReactive(reactive);
-  if (typeof id !== 'string' || !id || !Array.isArray(steps) || typeof output !== 'function') {
-    throw new TypeError('Sequences require an id, steps array, and optional output function');
+  if (typeof id !== 'string' || !id || !Array.isArray(steps)) {
+    throw new TypeError('Sequences require an id, steps array, and optional output binding');
   }
+  output = normalizeBinding(output, 'Sequences output binding');
   return Object.freeze({ type: 'sequence', id, output, reactive,
-    steps: Object.freeze(steps.map(step => Object.freeze({ ...step }))) });
+    steps: Object.freeze(steps.map(step => Object.freeze({ ...step, ...(step.input === undefined ? {} : { input: normalizeBinding(step.input, 'input binding') }) }))) });
 }
 
-export function selector({ id, steps, output = scope => scope.last, reactive = 'inherited' }: SelectorOptions): SelectorDefinition {
+export function selector({ id, steps, output = { path: ['last'] }, reactive = 'inherited' }: SelectorOptions): SelectorDefinition {
   checkReactive(reactive);
-  if (typeof id !== 'string' || !id || !Array.isArray(steps) || typeof output !== 'function') {
-    throw new TypeError('Selectors require an id, steps array, and optional output function');
+  if (typeof id !== 'string' || !id || !Array.isArray(steps)) {
+    throw new TypeError('Selectors require an id, steps array, and optional output binding');
   }
+  output = normalizeBinding(output, 'Selectors output binding');
   return Object.freeze({ type: 'selector', id, output, reactive,
-    steps: Object.freeze(steps.map(step => Object.freeze({ ...step }))) });
+    steps: Object.freeze(steps.map(step => Object.freeze({ ...step, ...(step.input === undefined ? {} : { input: normalizeBinding(step.input, 'input binding') }) }))) });
 }
 
 export function condition({ id, test, reactive = 'inherited' }: ConditionOptions): ConditionDefinition {
@@ -87,16 +90,16 @@ export function delay(options: TimedDecoratorOptions): TimedDecoratorDefinition 
 export function timeout(options: TimedDecoratorOptions): TimedDecoratorDefinition { return timed('timeout', options); }
 export function cooldown(options: TimedDecoratorOptions): TimedDecoratorDefinition { return timed('cooldown', options); }
 
-export function subtree({ input, output = scope => scope.last, ...options }: SubtreeOptions): SubtreeDefinition {
-  if (input !== undefined && typeof input !== 'function') throw new TypeError('Invalid subtree input binding');
-  if (typeof output !== 'function') throw new TypeError('Invalid subtree output binding');
+export function subtree({ input, output = { path: ['last'] }, ...options }: SubtreeOptions): SubtreeDefinition {
+  if (input !== undefined) input = normalizeBinding(input, 'subtree input binding');
+  output = normalizeBinding(output, 'subtree output binding');
   return Object.freeze({ ...decorator('subtree', options), input, output });
 }
 
 export function parallel({ id, steps, successThreshold, failureThreshold, reactive = 'inherited',
-  output = results => results }: ParallelOptions): ParallelDefinition {
+  output = { path: ['results'] } }: ParallelOptions): ParallelDefinition {
   checkReactive(reactive);
-  if (typeof id !== 'string' || !id || !Array.isArray(steps) || steps.length === 0 || typeof output !== 'function') {
+  if (typeof id !== 'string' || !id || !Array.isArray(steps) || steps.length === 0) {
     throw new TypeError('Parallel nodes require an id, nonempty steps, and optional output reducer');
   }
   for (const threshold of [successThreshold, failureThreshold]) {
@@ -110,6 +113,7 @@ export function parallel({ id, steps, successThreshold, failureThreshold, reacti
   for (const step of steps) {
     if (step.save !== undefined) throw new TypeError('Parallel outputs require a reducer, not save bindings');
   }
+  output = normalizeBinding(output, 'Parallel output binding');
   return Object.freeze({ type: 'parallel', id, successThreshold, failureThreshold, reactive, output,
-    steps: Object.freeze(steps.map(step => Object.freeze({ ...step }))) });
+    steps: Object.freeze(steps.map(step => Object.freeze({ ...step, ...(step.input === undefined ? {} : { input: normalizeBinding(step.input, 'input binding') }) }))) });
 }

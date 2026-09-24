@@ -372,6 +372,46 @@ history is retained. External writes are allowed while execution is paused; tree
 evaluation resumes only on step/continue. The full debugger watchpoint controller
 remains planned.
 
+## Declarative path bindings
+
+Input and output bindings accept either their existing function or a plain data
+descriptor: `{ path: ['vars', 'target', 'position'] }`. Paths are arrays of literal
+string keys and nonnegative safe-integer indices. They can be represented directly
+in JSON/YAML; they are never JavaScript expressions. This supplies portable binding
+data, but does not yet provide a tree document loader or serializer.
+
+```js
+const trip = sequence({ id: 'trip', steps: [
+  { node: findTarget, save: 'target' },
+  { node: move, input: { path: ['vars', 'target', 'position'] }, save: 'arrival' }
+], output: { path: ['vars', 'arrival'] } });
+```
+
+| Binding location | Path root |
+| --- | --- |
+| Sequence/selector/parallel step input | `{ input, vars, last }` (parallel vars are empty) |
+| Sequence/selector output | `{ input, vars, last }` |
+| Subtree input | `{ input, vars, last }` for the call |
+| Subtree output | `{ input, vars, last, result }`, with `result.status` and `result.output` |
+| Parallel output | `{ results, status }`, results in declaration order |
+
+For example, a parallel output path `['results', 0, 'output']` selects its first
+branch's output. An empty path returns the whole root. A key containing a dot is
+literal: `['input', 'a.b']` differs from `['input', 'a', 'b']`.
+
+Lookup visits own data properties on objects/arrays only. Missing properties or
+null/primitive intermediates return `undefined`; inherited properties are not
+visible. Accessor properties produce an execution error without invoking the getter.
+Bindings cannot call functions, perform arithmetic, or invoke methods; keep function
+bindings for those operations. Object values retain their normal ownership rules.
+Constructors copy and freeze path descriptors and segment arrays. Unknown descriptor
+fields and invalid segments fail validation. Input paths follow the same capture
+rules as functions: a retained child keeps its original input.
+
+Default composite output mappings are now declarative (`['last']` for sequences,
+selectors, and subtree calls; `['results']` for parallel nodes). Existing function
+bindings keep their original arguments and behavior.
+
 ## Reactivity
 
 Every node accepts `reactive: true | false | 'inherited'`. The default is
@@ -521,7 +561,7 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
-Not implemented yet: declarative bindings, JSON/YAML documents,
+Not implemented yet: JSON/YAML documents,
 configuration and extensions, debugger controller/UI, recordings/checkpoints,
 standalone bundles or environment adapters. The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.
