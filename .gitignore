@@ -1,0 +1,23 @@
+# Dependencies and generated builds
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Package archives and local tool output
+*.tgz
+coverage/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# OS metadata
+.DS_Store
+Thumbs.db
