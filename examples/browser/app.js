@@ -4,6 +4,10 @@ import { createWorld, advanceWorld, createMission } from './game.js';
 
 const byId = id => document.getElementById(id);
 const signal = byId('signal');
+const controls = document.querySelectorAll('button, input, select');
+for (const control of controls) control.disabled = true;
+byId('status').textContent = 'Loading mission...';
+let missionJSON;
 let runner, lastSignature = '';
 let previousTime = performance.now();
 function log(message) {
@@ -30,7 +34,7 @@ function render() {
   const active = state.status === 'idle' || state.status === RUNNING;
   byId('start').disabled = state.status !== 'idle' || state.paused;
   byId('name').disabled = state.status !== 'idle';
-  byId('status').textContent = `${state.status}${state.paused ? ' · paused' : ''}`;
+  byId('status').textContent = `${state.status}${state.paused ? ' Â· paused' : ''}`;
   byId('pause').disabled = state.status !== RUNNING || state.paused;
   byId('continue').disabled = !active || !state.paused;
   byId('step').disabled = !active;
@@ -40,7 +44,7 @@ function render() {
   byId('agent').style.left = `${world.x}%`;
   byId('agent').style.top = `${world.y}%`;
   world.crystals.forEach((crystal, index) => { crystalElements[index].hidden = !crystal.remaining; });
-  byId('game-status').textContent = `${world.phase} · Cargo ${world.cargo} · Delivered ${world.delivered} / 3`;
+  byId('game-status').textContent = `${world.phase} Â· Cargo ${world.cargo} Â· Delivered ${world.delivered} / ${world.crystals.length}`;
   byId('node-inspection').textContent = JSON.stringify(
     state.frames.find(frame => frame.nodeId === selectedNode) ?? {
       nodeId: selectedNode, status: selectedNode === tree.id ? state.status : 'inactive',
@@ -50,21 +54,21 @@ function render() {
   byId('resources').textContent = `Simulation time: ${world.time.toFixed(1)}s`;
   byId('inspection').textContent = JSON.stringify(state, (key, value) => value instanceof Error ? value.message : value, 2);
   const signature = JSON.stringify([state.status, state.paused, state.frames.map(f => [f.nodeId, f.phase]), state.queuedResumes]);
-  if (signature !== lastSignature) { log(`${state.status}${state.paused ? ' (paused)' : ''} · ${state.frames.at(-1)?.nodeId ?? 'no active node'} · queued: ${state.queuedResumes}`); lastSignature = signature; }
+  if (signature !== lastSignature) { log(`${state.status}${state.paused ? ' (paused)' : ''} Â· ${state.frames.at(-1)?.nodeId ?? 'no active node'} Â· queued: ${state.queuedResumes}`); lastSignature = signature; }
 }
 function reset() {
   runner?.cancel('reset');
   previousTime = performance.now();
   treeView?.dispose();
   world = createWorld();
-  const mission = createMission(world, log);
+  const mission = createMission(world, missionJSON, log);
   tree = mission.tree; selectedNode = tree.id;
   treeView = mountTreeView({ target: byId('tree'), tree, labels: mission.labels,
     onSelect(id) { selectedNode = id; render(); } });
   treeView.setMode(byId('tree-mode').value);
   mountWorld();
   runner = createRunner(tree, { input: { name: byId('name').value } });
-  lastSignature = ''; log('Reset — ready to start');
+  lastSignature = ''; log('Reset â€” ready to start');
   render();
 }
 byId('reset').onclick = reset;
@@ -91,16 +95,29 @@ for (const command of ['pause', 'continue', 'step', 'cancel']) {
     log(command); render();
   };
 }
-reset();
-const loop = setInterval(() => {
-  const now = performance.now();
-  const elapsed = Math.min((now - previousTime) / 1000, 0.2);
-  previousTime = now;
-  const state = runner.snapshot();
-  if (!state.paused && state.status === RUNNING) {
-    advanceWorld(world, elapsed);
-    runner.tick();
-  }
-  render();
-}, 100);
-addEventListener('pagehide', () => { clearInterval(loop); runner.cancel('page closed'); treeView.dispose(); }, { once: true });
+try {
+  const response = await fetch(new URL('./mission.json', import.meta.url));
+  if (!response.ok) throw new Error(`Mission request failed (${response.status})`);
+  missionJSON = await response.text();
+  reset();
+  // Enable controls that are not managed by render(), then apply execution state.
+  byId('reset').disabled = false;
+  byId('tree-mode').disabled = false;
+  const loop = setInterval(() => {
+    const now = performance.now();
+    const elapsed = Math.min((now - previousTime) / 1000, 0.2);
+    previousTime = now;
+    const state = runner.snapshot();
+    if (!state.paused && state.status === RUNNING) {
+      advanceWorld(world, elapsed);
+      runner.tick();
+    }
+    render();
+  }, 100);
+  addEventListener('pagehide', () => { clearInterval(loop); runner.cancel('page closed'); treeView.dispose(); }, { once: true });
+} catch (error) {
+  for (const control of controls) control.disabled = true;
+  byId('status').textContent = 'Mission could not be loaded';
+  byId('game-status').textContent = error.message;
+  log(`Mission load failed: ${error.message}`);
+}

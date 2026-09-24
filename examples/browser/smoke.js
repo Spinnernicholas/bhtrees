@@ -6,7 +6,7 @@ async function until(predicate, message) {
   throw new Error(message);
 }
 try {
-  const { inverter, condition, createRunner, action, sequence, subtree, parallel, createRegistry, encodeTree, decodeTree, RUNNING, SUCCESS } = await import('../../dist/index.js');
+  const { inverter, condition, createRunner, action, sequence, subtree, parallel, createRegistry, encodeTree, decodeTree, encodeValue, decodeValue, RUNNING, SUCCESS } = await import('../../dist/index.js');
   const { mountTreeView } = await import('./tree-view.js');
   const target = document.createElement('ol');
   const tree = inverter({ id: 'inverted', child: condition({ id: 'predicate', test: () => false }) });
@@ -51,6 +51,11 @@ try {
   const decoded = decodeTree(encodeTree(portable, { registry }), { registry });
   check(createRunner(decoded, { input: 'JSON in browser' }).tick().output === 'JSON in browser',
     'Portable JSON tree failed in browser');
+  registry.registerValue('smoke.date', { version: 1, test: value => value instanceof Date,
+    encode: value => value.toISOString(), decode: value => new Date(value) });
+  const date = new Date('2020-01-02T03:04:05Z');
+  const restoredDate = decodeValue(encodeValue(date, { registry }), { registry });
+  check(restoredDate instanceof Date && restoredDate.getTime() === date.getTime(), 'Custom value round trip failed');
   await until(() => frame.contentDocument?.querySelector('#history li'), 'Application did not initialize');
   const doc = frame.contentDocument;
   check(frame.contentWindow.getComputedStyle(doc.querySelector('.playground')).display === 'grid', 'Stylesheet did not load');
@@ -91,11 +96,11 @@ try {
   check(get('world').innerHTML === pausedWorld, 'World changed while paused');
   check(get('resources').textContent === pausedResources, 'Timer expired while paused');
   check(get('tree').dataset.view === 'blocks', 'Blocks should be the default view');
-  check(doc.querySelectorAll('#tree > .sequence > .node-children > .tree-node').length === 3, 'Blocks are not nested under sequence');
+  check(doc.querySelectorAll('[data-node-id="expeditions"] > .node-children > [data-node-id="expedition"]').length === 1, 'Reusable expedition is not nested under repeat');
   const transitions = inspection().transitions;
-  const node = doc.querySelector('[data-node-id="trip-1-scan"] > .node-header');
+  const node = doc.querySelector('[data-node-id="expedition-scan"] > .node-header');
   node.click();
-  check(JSON.parse(get('node-inspection').textContent).nodeId === 'trip-1-scan', 'Node selection failed');
+  check(JSON.parse(get('node-inspection').textContent).nodeId === 'expedition-scan', 'Node selection failed');
   get('tree-mode').value = 'list';
   get('tree-mode').dispatchEvent(new frame.contentWindow.Event('change'));
   check(get('tree').dataset.view === 'list', 'List switch failed');
@@ -106,7 +111,7 @@ try {
   check(inspection().status === 'RUNNING', 'Paused tree completed');
   click('continue');
   await sleep(300);
-  check(inspection().frames.some(f => f.nodeId === 'trip-1-scan'), 'Scan timer did not preserve its remaining duration');
+  check(inspection().frames.some(f => f.nodeId === 'expedition-scan'), 'Scan timer did not preserve its remaining duration');
   click('signal');
   await until(() => get('game-status').textContent.startsWith('Travel to crystal'), 'Radar did not start travel');
   click('pause');
@@ -118,7 +123,7 @@ try {
   check(inspection().output.delivered === 3, 'Agent did not deliver three crystals');
   check(inspection().output.agent === 'Smoke explorer', 'Start did not use the entered name');
   check(doc.querySelectorAll('.crystal:not([hidden])').length === 0, 'Collected crystals still visible');
-  const blocks = doc.querySelector('[data-node-id="trip-1"] > .node-children').children;
+  const blocks = doc.querySelector('[data-node-id="expedition"] > .node-children').children;
   for (let i = 1; i < blocks.length; i++) {
     check(Math.abs(blocks[i].getBoundingClientRect().top - blocks[i - 1].getBoundingClientRect().bottom) <= 1.5, 'Sibling blocks do not touch');
   }

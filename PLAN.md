@@ -1,6 +1,6 @@
 # BHTrees implementation plan
 
-Status: development started. Versioned canonical/JSON tree documents now preserve shared definitions and resolve registered action/condition implementations with strict validation. The engine supports declarative path bindings, optional caller-owned observable blackboards, threshold-based parallel branches with explicit output reducers, reusable subtree calls with explicit bindings, synchronous boolean conditions, memory/reactive selectors, inverter/force-result, retry/repeat, and delay/timeout/cooldown decorators, tick actions, promise/timer/event/poll/callback-token waits, nested any/all groups, and an injectable timer clock. Nodes support tri-state reactive inheritance; sequences and selectors preserve reached running children and interrupt unreachable branches. The browser playground includes execution controls, tree inspection, event history, and a simulation clock. The core now uses strict TypeScript with generated ESM JavaScript and declarations; the planned Phase 2 runtime/data features are implemented and covered by deterministic tests. The playground is not yet the full debugger controller or renderer extension API. See README.md for capabilities and limitations.
+Status: development started. Versioned custom value envelopes now support registry codecs and sequential payload migrations. Versioned canonical/JSON tree documents now preserve shared definitions and resolve registered action/condition implementations with strict validation. The engine supports declarative path bindings, optional caller-owned observable blackboards, threshold-based parallel branches with explicit output reducers, reusable subtree calls with explicit bindings, synchronous boolean conditions, memory/reactive selectors, inverter/force-result, retry/repeat, and delay/timeout/cooldown decorators, tick actions, promise/timer/event/poll/callback-token waits, nested any/all groups, and an injectable timer clock. Nodes support tri-state reactive inheritance; sequences and selectors preserve reached running children and interrupt unreachable branches. The browser playground loads its mission from a JSON tree document and includes execution controls, tree inspection, event history, and a simulation clock. The core now uses strict TypeScript with generated ESM JavaScript and declarations; the planned Phase 2 runtime/data features are implemented and covered by deterministic tests. The playground is not yet the full debugger controller or renderer extension API. See README.md for capabilities and limitations.
 
 ## Goals
 
@@ -432,7 +432,9 @@ reactive interruption, parallel results, repeat budgets, and runs without a blac
   Implemented: version-1 tree documents with ID references, JSON encode/decode,
   registry-scoped action/condition implementations with exact type versions,
   strict function-binding export errors, and field-path validation.
-  Next: custom node/value registries and migration hooks; non-tree document kinds
+  Custom value registries now provide collision-safe portable envelopes, JSON
+  round trips, and sequential version migration hooks with strict value validation.
+  Next: custom node factories and node migration hooks; non-tree document kinds
   remain pending.
 - Implement owned YAML parser/writer and conformance fixtures in parallel with schema work.
 - Implement embedded/separate config, provenance, precedence, and config resolution.

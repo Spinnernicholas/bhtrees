@@ -4,3 +4,5 @@ export type * from './types.js';
 export { createBlackboard } from './blackboard.js';
 export { createRegistry, toTreeDocument, fromTreeDocument, encodeTree, decodeTree, DocumentError } from './serialization.js';
 export type { TreeRegistry, ActionImplementation, TreeDocument, TreeNodeDocument, TreeStepDocument, SerializationOptions } from './serialization.js';
+export { toPortableValue, fromPortableValue, encodeValue, decodeValue } from './values.js';
+export type { ValueCodec, PortableValue } from './values.js';

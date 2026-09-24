@@ -1,0 +1,44 @@
+{
+  "format": "bhtrees-example",
+  "version": 1,
+  "kind": "tree",
+  "root": {
+    "id": "mission",
+    "label": "Crystal recovery mission",
+    "type": "sequence",
+    "steps": [
+      {
+        "node": {
+          "id": "harvest-loop",
+          "label": "Harvest until complete",
+          "type": "selector",
+          "steps": [
+            {
+              "node": {
+                "id": "expeditions",
+                "label": "Repeat expeditions",
+                "type": "repeat",
+                "times": "unbounded",
+                "child": {
+                  "id": "expedition",
+                  "label": "One crystal expedition",
+                  "type": "sequence",
+                  "steps": [
+                    { "node": { "id": "crystals-remain", "label": "Crystals remain?", "type": "condition", "implementation": "game.crystalsRemain" } },
+                    { "node": { "id": "expedition-scan", "label": "Scan for crystals", "type": "action", "implementation": "game.scan" }, "save": "target" },
+                    { "node": { "id": "expedition-outbound", "label": "Travel to crystal", "type": "action", "implementation": "game.outbound" }, "input": { "path": ["vars", "target"] } },
+                    { "node": { "id": "expedition-mine", "label": "Charge drill and extract", "type": "action", "implementation": "game.mine" }, "input": { "path": ["vars", "target"] } },
+                    { "node": { "id": "expedition-home", "label": "Return to base", "type": "action", "implementation": "game.home" } },
+                    { "node": { "id": "expedition-unload", "label": "Deposit cargo", "type": "action", "implementation": "game.unload" } }
+                  ]
+                }
+              }
+            },
+            { "node": { "id": "harvest-complete", "label": "All crystals delivered?", "type": "condition", "implementation": "game.harvestComplete" } }
+          ]
+        }
+      },
+      { "node": { "id": "mission-report", "label": "Mission complete", "type": "action", "implementation": "game.report" } }
+    ]
+  }
+}

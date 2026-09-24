@@ -16,6 +16,10 @@ test('browser server serves HTML and modules but not project metadata', async t 
     assert.equal(resource.status, 200, `Asset failed to load: ${asset}`);
     assert.match(resource.headers.get('content-type'), asset.endsWith('.css') ? /text\/css/ : /javascript/);
   }
+  const mission = await fetch(`${url}/examples/browser/mission.json`);
+  assert.equal(mission.status, 200);
+  assert.match(mission.headers.get('content-type'), /application\/json/);
+  assert.equal((await mission.json()).kind, 'tree');
   const module = await fetch(`${url}/dist/index.js`);
   assert.match(module.headers.get('content-type'), /javascript/);
   assert.equal((await fetch(`${url}/package.json`)).status, 404);

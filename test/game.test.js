@@ -1,7 +1,10 @@
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { createRunner, RUNNING, SUCCESS } from '../dist/index.js';
 import { createWorld, advanceWorld, createMission, secondsUntilArrival } from '../examples/browser/game.js';
+
+const missionJSON = await readFile(new URL('../examples/browser/mission.json', import.meta.url), 'utf8');
 
 test('world movement uses target and speed without running the behavior tree', () => {
   const world = createWorld();
@@ -22,7 +25,7 @@ test('world movement uses target and speed without running the behavior tree', (
 
 test('tree sets movement intent while only world updates change position', () => {
   const world = createWorld();
-  const { tree } = createMission(world);
+  const { tree } = createMission(world, missionJSON);
   const runner = createRunner(tree);
   world.radarPing = true;
   runner.tick();
@@ -38,7 +41,7 @@ test('tree sets movement intent while only world updates change position', () =>
 
 test('agent completes all expeditions using ordinary ticks', () => {
   const world = createWorld();
-  const { tree } = createMission(world);
+  const { tree } = createMission(world, missionJSON);
   const runner = createRunner(tree, { input: { name: 'Scout' } });
   runner.tick();
   for (let i = 0; i < 600 && runner.snapshot().status === RUNNING; i++) {
@@ -55,7 +58,7 @@ test('agent completes all expeditions using ordinary ticks', () => {
 
 test('cancelling travel stops the agent destination', () => {
   const world = createWorld();
-  const { tree } = createMission(world);
+  const { tree } = createMission(world, missionJSON);
   const runner = createRunner(tree, { input: { name: 'Scout' } });
   world.radarPing = true;
   runner.tick();
@@ -64,4 +67,60 @@ test('cancelling travel stops the agent destination', () => {
   const position = [world.x, world.y]; advanceWorld(world, 1);
   assert.deepEqual([world.x, world.y], position);
   assert.equal(world.destination, null);
+});
+
+test('the JSON loop harvests zero, one, or more than three crystals', () => {
+  for (const count of [0, 1, 5]) {
+    const world = createWorld();
+    world.crystals = Array.from({ length: count }, (_, i) => ({ id: `crystal-${i}`, x: 30 + i * 8, y: 30, remaining: true }));
+    const { tree } = createMission(world, missionJSON);
+    const runner = createRunner(tree, { input: { name: 'Looper' } });
+    runner.tick();
+    const activations = new Set();
+    for (let i = 0; i < 2000 && runner.snapshot().status === RUNNING; i++) {
+      const scan = runner.snapshot().frames.find(frame => frame.nodeId === 'expedition-scan');
+      if (scan) activations.add(scan.activationId);
+      advanceWorld(world, 0.1); runner.tick();
+    }
+    assert.equal(runner.snapshot().status, SUCCESS);
+    assert.deepEqual(runner.snapshot().output, { agent: 'Looper', delivered: count, mission: 'complete' });
+    assert.equal(activations.size, count);
+    assert.equal(world.cargo, 0); assert.equal(world.destination, null);
+    assert.ok(world.crystals.every(crystal => !crystal.remaining));
+    const transitions = runner.snapshot().transitions;
+    runner.tick(); assert.equal(runner.snapshot().transitions, transitions);
+  }
+});
+
+test('the exhaustion fallback does not report completion with undelivered cargo', () => {
+  const world = createWorld(); world.crystals = []; world.cargo = 1;
+  const { tree } = createMission(world, missionJSON);
+  assert.equal(createRunner(tree).tick().status, 'FAILURE');
+});
+
+test('malformed mission JSON fails before any game action runs', () => {
+  const world = createWorld(), before = structuredClone(world);
+  assert.throws(() => createMission(world, '{'), /Invalid JSON/);
+  const document = JSON.parse(missionJSON);
+  document.root.steps[1].node.implementation = 'game.missing';
+  assert.throws(() => createMission(world, JSON.stringify(document)), /Unknown action/);
+  assert.deepEqual(world, before);
+});
+
+test('mission labels are editable without changing action implementations', () => {
+  const document = JSON.parse(missionJSON);
+  document.root.label = 'My crystal mission';
+  const { tree, labels } = createMission(createWorld(), JSON.stringify(document));
+  assert.equal(tree.id, 'mission');
+  assert.equal(labels.mission, 'My crystal mission');
+  assert.equal(labels['expedition-scan'], 'Scan for crystals');
+});
+
+test('nested mission validation rejects duplicate IDs and misspelled fields', () => {
+  const document = JSON.parse(missionJSON);
+  document.root.steps[1].node.id = document.root.id;
+  assert.throws(() => createMission(createWorld(), JSON.stringify(document)), /duplicate/i);
+  document.root.steps[1].node.id = 'mission-report';
+  document.root.steps[1].node.lable = 'Typo';
+  assert.throws(() => createMission(createWorld(), JSON.stringify(document)), /lable/);
 });

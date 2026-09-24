@@ -1,4 +1,4 @@
-import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, delay, timeout, cooldown, subtree, parallel, createRegistry, encodeTree, decodeTree, toTreeDocument, fromTreeDocument, createBlackboard, createRunner, SUCCESS, RUNNING } from 'bhtrees';
+import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, delay, timeout, cooldown, subtree, parallel, createRegistry, encodeTree, decodeTree, toTreeDocument, fromTreeDocument, encodeValue, decodeValue, toPortableValue, fromPortableValue, createBlackboard, createRunner, SUCCESS, RUNNING } from 'bhtrees';
 import type { ActionImplementation, ActionContext, Clock, NodeDefinition, RunnerSnapshot, WaitDescriptor } from 'bhtrees';
 
 const clock: Clock = { setTimeout: () => ({ id: 1 }), clearTimeout: handle => { void handle; } };
@@ -165,3 +165,16 @@ fromTreeDocument(toTreeDocument(portable, { registry }), { registry });
 registry.registerAction('app.invalid', {});
 // @ts-expect-error Conditions are synchronous boolean predicates.
 registry.registerCondition('app.async', async () => true);
+
+registry.registerValue<Date>('date', {
+  version: 2,
+  test: (value): value is Date => value instanceof Date,
+  encode: date => date.toISOString(),
+  decode: data => { if (typeof data !== 'string') throw new TypeError('Expected string'); return new Date(data); },
+  migrations: { 1: data => String(data) }
+});
+const portableValue = toPortableValue(new Date(), { registry });
+const unknownValue: unknown = fromPortableValue(portableValue, { registry });
+decodeValue(encodeValue(unknownValue, { registry }), { registry });
+// @ts-expect-error Codecs require a decoder.
+registry.registerValue('missing-decoder', { version: 1, test: (v): v is Date => v instanceof Date, encode: date => date.toISOString() });

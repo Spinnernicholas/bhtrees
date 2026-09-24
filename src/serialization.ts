@@ -1,9 +1,14 @@
+import { DocumentError } from './document-error.js';
+export { DocumentError } from './document-error.js';
+import { attachValueRegistry, registerValueType } from './values.js';
+import type { ValueCodec } from './values.js';
 import * as nodes from './nodes.js';
 import { normalizeBinding } from './bindings.js';
 import type { ActionOptions, ActionDefinition, ConditionDefinition, NodeDefinition, PathBinding, Reactive, Value } from './types.js';
 
 export type ActionImplementation = ActionOptions extends infer O ? O extends ActionOptions ? Omit<O, 'id' | 'reactive'> : never : never;
 export interface TreeRegistry {
+  registerValue<T>(name: string, codec: ValueCodec<T>): void;
   registerAction(name: string, implementation: ActionImplementation, version?: number): void;
   registerCondition(name: string, test: ConditionDefinition['test'], version?: number): void;
 }
@@ -19,6 +24,7 @@ export function createRegistry(): TreeRegistry {
     entries.set(name, { name, version, definition });
   }
   const registry: TreeRegistry = Object.freeze({
+    registerValue<T>(name: string, codec: ValueCodec<T>) { registerValueType(registry, name, codec); },
     registerAction(name: string, implementation: ActionImplementation, version = 1) {
       register(name, version, nodes.action({ ...implementation, id: name }));
     },
@@ -27,6 +33,7 @@ export function createRegistry(): TreeRegistry {
     }
   });
   registries.set(registry, entries);
+  attachValueRegistry(registry);
   return registry;
 }
 
@@ -53,9 +60,6 @@ export interface TreeDocument {
   kind: 'tree';
   root: string;
   nodes: TreeNodeDocument[];
-}
-export class DocumentError extends TypeError {
-  constructor(public readonly path: string, message: string) { super(`${path}: ${message}`); this.name = 'DocumentError'; }
 }
 export interface SerializationOptions { registry?: TreeRegistry }
 const MAX_DEPTH = 128, MAX_NODES = 10000, MAX_TEXT = 1000000;

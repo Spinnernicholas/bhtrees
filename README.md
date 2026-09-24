@@ -37,7 +37,20 @@ Run `npm run example:browser`, then open **http://127.0.0.1:8080** in a modern b
 The server binds to localhost only. Set `PORT` to use another port. Use the HTTP
 server instead of opening the HTML as a local file, so ES-module imports work.
 
-Click **Start** to launch a rover on three crystal-recovery expeditions; **Reset** returns it to idle.
+The playground fetches `examples/browser/mission.json` at startup. Its nested
+example format keeps children and editable labels together; `mission-loader.js`
+translates it into the library's standard tree document using the registry in
+`game.js`. See the [editing guide](examples/browser/README.md).
+The JSON defines sequences, action references,
+and input bindings; JavaScript implements movement, scanning, mining, and unloading.
+Edit the JSON and reload the page to change the tree. Controls remain disabled while
+loading, and fetch/validation failures appear in the status and event history.
+Reset rebuilds a fresh world and tree from the document already loaded.
+
+Click **Start** to launch a rover that repeats crystal-recovery expeditions until all crystals are delivered; **Reset** returns it to idle.
+The JSON uses one reusable expedition under an unbounded repeat, guarded by a
+crystals-remaining condition. When the guard fails, a selector verifies that all
+crystals are harvested and no cargo remains before reporting success.
 Each expedition scans for the nearest deposit, travels to it, charges a drill,
 collects a crystal, returns to base, and deposits its cargo. **Send radar ping**
 skips the scan delay. The world shows movement, remaining deposits, cargo, and deliveries.
@@ -457,8 +470,62 @@ parsing uses the platform parser; this is not a YAML codec.
 
 Run `npm run build`, then `node examples/documents.js` for a complete example.
 This first document slice supports tree documents and registered action/condition
-implementations. Custom node factories/value serializers, migrations, YAML,
+implementations. Custom node factories, node migrations, YAML,
 configuration documents, checkpoints, and recordings remain planned.
+
+## Custom values and migrations
+
+`registry.registerValue(name, { version, test, encode, decode, migrations? })`
+registers a synchronous value codec. `test` identifies the application type, `encode`
+returns a portable payload, and `decode` reconstructs the application value.
+Decoded results must pass the same predicate. In TypeScript, `test` is a type guard;
+`encode` and `decode` then use that application type. Value names have a separate
+namespace from action/condition names and must be unique within their registry.
+The first matching codec in registration order handles export.
+
+```js
+registry.registerValue('app.date', {
+  version: 2,
+  test: value => value instanceof Date,
+  encode: date => date.toISOString(),
+  decode: data => {
+    if (typeof data !== 'string') throw new TypeError('Expected date string');
+    const date = new Date(data);
+    if (!Number.isFinite(date.getTime())) throw new TypeError('Invalid date');
+    return date;
+  },
+  migrations: { 1: milliseconds => new Date(milliseconds).toISOString() }
+});
+```
+
+`toPortableValue`/`fromPortableValue` convert values and canonical envelopes;
+`encodeValue`/`decodeValue` convert values and JSON text. Supply `{ registry }`
+as the second argument. Custom envelopes contain
+`{ kind: 'custom', type, version, data }`. Arrays use `{ kind: 'array', items }`,
+and records use `{ kind: 'object', entries: [[key, value], ...] }`. Every container
+is wrapped, so an ordinary object's keys cannot impersonate a custom envelope.
+Nested custom types are supported. These standalone value APIs do not automatically
+capture tree inputs, blackboards, or runner state.
+
+A migration keyed by version `n` converts its decoded payload from version `n` to
+`n + 1`. Decode checks that every required step exists, decodes the payload, runs
+those migrations in order, then calls the current decoder. Future versions and
+missing migration steps fail with `DocumentError`. Codec and migration exceptions
+include the affected field path. Registration copies the callback table; changing
+the supplied registration object later does not change the registry.
+
+Unregistered values support null, booleans, strings, finite numbers except negative
+zero, dense arrays, and plain records. Functions, undefined, symbols, bigint,
+nonfinite numbers, negative zero, and class instances require an explicit suitable
+codec or fail export. Accessors, symbol keys, sparse arrays, extra array properties,
+and cycles are rejected. Repeated acyclic references are copied, not preserved.
+Decoded records have null prototypes, allowing keys such as `__proto__` safely.
+Property descriptors/prototypes are not preserved. Codec payloads must eventually
+reduce to supported values; a codec cannot encode a value as itself.
+
+Limits are 128 nesting levels, 100,000 visited values, 128 migration steps per
+custom value, and 1,000,000 characters for JSON text. Custom node factories and
+node-implementation migrations remain separate upcoming work.
 
 ## Reactivity
 
@@ -609,7 +676,7 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
-Not implemented yet: YAML, custom type migrations, non-tree documents,
+Not implemented yet: YAML, custom node factories/migrations, non-tree documents,
 configuration and extensions, debugger controller/UI, recordings/checkpoints,
 standalone bundles or environment adapters. The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.
