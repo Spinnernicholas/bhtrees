@@ -1,4 +1,4 @@
-import type { Value, Clock, WaitDescriptor, WaitOptions } from './types.js';
+import type { Value, Clock, WaitDescriptor, WaitOptions, CallbackToken } from './types.js';
 
 import { RUNNING } from './nodes.js';
 
@@ -6,7 +6,34 @@ type WaitFields = WaitDescriptor extends infer D ? D extends WaitDescriptor ? Om
 const descriptor = (fields: WaitFields, options: WaitOptions = {}): WaitDescriptor => ({ status: RUNNING, ...fields,
   resolve: options.resume ?? options.resolve, reject: options.reject });
 
+interface CallbackState {
+  registered: boolean;
+  disposed: boolean;
+  settled: boolean;
+  rejected: boolean;
+  value?: Value;
+  notify?: (value: Value, rejected: boolean) => void;
+}
+const callbacks = new WeakMap<WaitDescriptor, CallbackState>();
+
 export const waits = Object.freeze({
+  callback(options?: WaitOptions): CallbackToken {
+    const wait = Object.freeze(descriptor({ kind: 'callback' }, options));
+    const state: CallbackState = { registered: false, disposed: false, settled: false, rejected: false };
+    callbacks.set(wait, state);
+    function settle(value: Value, rejected: boolean) {
+      if (state.disposed || state.settled) return false;
+      state.settled = true;
+      state.rejected = rejected;
+      state.value = value;
+      state.notify?.(value, rejected);
+      return true;
+    }
+    return Object.freeze({ wait,
+      resolve: (value?: Value) => settle(value, false),
+      reject: (error?: Value) => settle(error, true)
+    });
+  },
   promise(promise: PromiseLike<Value>, options?: WaitOptions) {
     if (!promise || typeof promise.then !== 'function') throw new TypeError('Expected a promise');
     // A race may settle before this descriptor is registered. Observe rejection now.
@@ -55,6 +82,16 @@ export function registerWait(spec: WaitDescriptor, clock: Clock, notify: (value:
   }
   try {
     switch (spec.kind) {
+      case 'callback': {
+        const state = callbacks.get(spec);
+        if (!state) throw new TypeError('Callback waits must be created by wait.callback');
+        if (state.registered) throw new TypeError('Callback tokens can only be registered once');
+        state.registered = true;
+        state.notify = finish;
+        disposer = () => { state.disposed = true; state.notify = undefined; state.value = undefined; };
+        if (state.settled) finish(state.value, state.rejected);
+        break;
+      }
       case 'promise':
         Promise.resolve(spec.promise).then(value => finish(value), error => finish(error, true));
         break;

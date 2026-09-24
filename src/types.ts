@@ -7,14 +7,21 @@ export type BehaviorStatus = 'SUCCESS' | 'FAILURE' | 'RUNNING';
 export type RunnerStatus = BehaviorStatus | 'idle' | 'cancelled' | 'errored';
 export interface Completion { status: 'SUCCESS' | 'FAILURE'; output?: Value }
 export interface WaitOptions { resume?: string; resolve?: string; reject?: string }
-export type WaitKind = 'promise' | 'timer' | 'event' | 'poll' | 'any' | 'all';
+export type WaitKind = 'promise' | 'timer' | 'event' | 'poll' | 'callback' | 'any' | 'all';
 export type WaitDescriptor = { status: 'RUNNING'; resolve?: string; reject?: string } & (
+  { kind: 'callback' } |
   { kind: 'promise'; promise: PromiseLike<Value> } |
   { kind: 'timer'; ms: number; value?: Value } |
   { kind: 'event'; subscribe: (notify: (value?: Value) => void) => () => void } |
   { kind: 'poll'; predicate: () => Value } |
   { kind: 'any' | 'all'; children: readonly WaitDescriptor[] }
 );
+export interface CallbackToken {
+  readonly wait: WaitDescriptor;
+  /** Returns true only for the first accepted settlement, including before registration. */
+  resolve(value?: Value): boolean;
+  reject(error?: Value): boolean;
+}
 export type ActionResult = BehaviorStatus | Completion | { status: 'RUNNING'; kind?: undefined } | WaitDescriptor;
 export interface BlackboardSnapshot {
   readonly revision: number;

@@ -132,3 +132,13 @@ board.set(42, 'value');
 board.snapshot().values.count = 1;
 // @ts-expect-error Runner board injection must implement the blackboard API.
 createRunner(tree, { blackboard: {} });
+
+action({ id: 'callback', enter(ctx) {
+  const token = ctx.wait.callback({ resume: 'done', reject: 'failed' });
+  const accepted: boolean = token.resolve(42);
+  token.reject(new Error('ignored after resolution'));
+  void accepted;
+  // @ts-expect-error Callback tokens are handles, not wait descriptors.
+  ctx.wait.any([token]);
+  return token.wait;
+}, resume: { done: (ctx, value) => ctx.success(value), failed: (ctx, error) => ctx.failure(error) } });

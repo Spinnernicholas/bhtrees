@@ -419,6 +419,45 @@ not start a new traversal. Terminal roots remain terminal until a new runner is 
 Snapshots include each live frame's configured `reactive`, `effectiveReactive`, and
 `onTraversal` flag, including retained branches while earlier guards are being checked.
 
+## Callback-token waits
+
+`ctx.wait.callback({ resume, reject? })` returns a frozen handle with `wait`,
+`resolve(value)`, and `reject(error)`. Return `token.wait` from the action and pass
+the settlement methods to external code. `resolve` is also accepted as an alias
+for `resume` in the options, as with other waits.
+
+```js
+const move = action({ id: 'move', enter(ctx) {
+  const token = ctx.wait.callback({ resume: 'arrived', reject: 'failed' });
+  ctx.services.moveTo(ctx.input, token.resolve, token.reject);
+  return token.wait;
+}, resume: {
+  arrived: (ctx, position) => ctx.success(position),
+  failed: (ctx, error) => ctx.failure(error)
+}, cancel: ctx => ctx.services.stopMoving() });
+```
+
+Settlement returns `true` only for the first accepted call, and `false` for later
+calls or calls after disposal. A callback may fire synchronously before the action
+returns: the token stores its result until registration. Settlement only queues
+a continuation; it never executes the handler inline. A synchronous settlement
+can be consumed at a later transition in the same tick if budget permits. Pause
+retains queued results. Rejection without a named rejection handler becomes an
+execution error, without creating a rejected JavaScript promise.
+
+Use `token.wait` inside `wait.any`/`wait.all`; group handlers govern the result as
+with other child descriptors. Registered losing tokens are disposed when the
+engine consumes the group's result. Cancellation and reactive interruption also
+invalidate registered tokens. A token skipped by an already-settled group was
+never registered and has no runner connection; it may still accept one settlement.
+Invalidating a token does not stop its external operation: use the action's cancel
+handler for that cleanup.
+
+Each descriptor may be registered only once. Create fresh tokens inside `enter`
+or a resume handler for new waits; do not put a token in a reusable definition.
+Tokens are runtime handles and cannot be forged or copied into new descriptors.
+Snapshots report `waitingOn: 'callback'` for direct callback waits.
+
 ## Timer and event waits
 
 ```js
@@ -482,7 +521,7 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
-Not implemented yet: remaining resume types, declarative bindings, JSON/YAML documents,
+Not implemented yet: declarative bindings, JSON/YAML documents,
 configuration and extensions, debugger controller/UI, recordings/checkpoints,
 standalone bundles or environment adapters. The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.
