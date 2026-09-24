@@ -185,6 +185,55 @@ even if transition budget remains. This lets reactive ancestors recheck guards
 between attempts, including infinite loops. Smaller budgets and debugger steps
 can split one attempt across drives. Paused ticks never start a new attempt.
 
+## Timed decorators
+
+`delay({ id, child, ms, reactive? })` waits before entering its child, once per
+activation, then preserves the child's result and output. `delay` with zero
+milliseconds enters immediately. While waiting, its snapshot reports `waitingOn:
+'timer'`. Interrupting the delay disposes its timer without starting the child.
+
+`timeout({ id, child, ms, reactive? })` starts its timer just before entering the
+child. If it expires, the next engine transition cancels the active subtree with
+reason `'timeout'` and returns `FAILURE` with no output. Zero milliseconds fails
+without starting the child. Normal child completion preserves its result/output
+and disposes the timer.
+
+An expired timeout on the active stack takes precedence over the next child
+transition, including a queued continuation. A direct child result already
+processed by the engine wins even if the wrapper has not returned it yet.
+Outermost expired timeouts win ties. Timeouts do not interrupt synchronous user
+callbacks; timeout handling is itself one engine transition. A retained branch
+is checked when traversal reaches it, so reactive guards can still preempt it.
+
+`cooldown({ id, child, ms, reactive? })` allows its first entry immediately. When
+its child completes with either success or failure, the cooldown period begins.
+Reentry during that period returns `FAILURE` with no output, allowing a selector
+to choose a fallback. It never interrupts a retained running child. An interrupted
+or errored child does not start a cooldown; zero milliseconds disables the gate.
+Cooldown state is keyed by definition within each runner and survives activation
+completion. Different runners never share cooldown state. All cooldown timers
+are disposed when the root completes, errors, or is cancelled.
+
+```js
+import { action, delay, timeout, cooldown } from './dist/index.js';
+
+const guardedRequest = cooldown({ id: 'rate-limit', ms: 1000, child:
+  timeout({ id: 'deadline', ms: 500, child:
+    delay({ id: 'settle', ms: 25, child:
+      action({ id: 'request', enter: c => c.wait.promise(c.services.request(),
+        { resume: 'done' }), resume: { done: (c, value) => c.success(value) } })
+    })
+  })
+});
+```
+
+Durations must be finite, nonnegative milliseconds. These decorators use the same
+injected `clock.setTimeout`/`clearTimeout` as action waits. Pausing stops execution,
+not clock time: timers may expire while paused, and the next step or continued tick
+processes that state. Timer callbacks only mark readiness; they never execute a
+child or cancel work directly. Supply a simulation clock to control elapsed time.
+Errors, including cleanup errors, remain execution errors.
+
 ## Reactivity
 
 Every node accepts `reactive: true | false | 'inherited'`. The default is

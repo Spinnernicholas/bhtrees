@@ -1,4 +1,4 @@
-import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, createRunner, SUCCESS, RUNNING } from 'bhtrees';
+import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, delay, timeout, cooldown, createRunner, SUCCESS, RUNNING } from 'bhtrees';
 import type { ActionContext, Clock, NodeDefinition, RunnerSnapshot, WaitDescriptor } from 'bhtrees';
 
 const clock: Clock = { setTimeout: () => ({ id: 1 }), clearTimeout: handle => { void handle; } };
@@ -76,3 +76,13 @@ void completed;
 retry({ id: 'missing-limit', child: tree });
 // @ts-expect-error Repeat requires a numeric iteration count.
 repeat({ id: 'bad-limit', child: tree, times: 'forever' });
+
+createRunner(delay({ id: 'delay', ms: 20, child: tree }));
+createRunner(timeout({ id: 'timeout', ms: 100, child: decorated }));
+createRunner(cooldown({ id: 'cooldown', ms: 50, child: priority }));
+// @ts-expect-error Timed decorators require an explicit duration.
+delay({ id: 'missing-duration', child: tree });
+// @ts-expect-error Durations are numbers, not strings.
+timeout({ id: 'bad-duration', ms: '100', child: tree });
+// @ts-expect-error Cooldown wraps a node definition.
+cooldown({ id: 'bad-child', ms: 10, child: {} });

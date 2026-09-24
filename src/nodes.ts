@@ -1,7 +1,7 @@
 import type { Reactive, ActionOptions, ActionDefinition, SequenceOptions, SequenceDefinition,
   SelectorOptions, SelectorDefinition, ConditionOptions, ConditionDefinition,
   DecoratorKind, DecoratorOptions, DecoratorDefinition,
-  RetryOptions, RetryDefinition, RepeatOptions, RepeatDefinition } from './types.js';
+  RetryOptions, RetryDefinition, RepeatOptions, RepeatDefinition, TimedDecoratorKind, TimedDecoratorOptions, TimedDecoratorDefinition } from './types.js';
 
 export const SUCCESS = 'SUCCESS';
 export const FAILURE = 'FAILURE';
@@ -51,7 +51,7 @@ export function condition({ id, test, reactive = 'inherited' }: ConditionOptions
   return Object.freeze({ type: 'condition', id, test, reactive });
 }
 
-function decorator<T extends DecoratorKind | 'retry' | 'repeat'>(type: T, { id, child, reactive = 'inherited' }: DecoratorOptions) {
+function decorator<T extends DecoratorKind | 'retry' | 'repeat' | TimedDecoratorKind>(type: T, { id, child, reactive = 'inherited' }: DecoratorOptions) {
   checkReactive(reactive);
   if (typeof id !== 'string' || !id || !child || typeof child !== 'object') {
     throw new TypeError('Decorators require an id and child node');
@@ -78,3 +78,11 @@ export function repeat({ times, ...options }: RepeatOptions): RepeatDefinition {
   checkCount(times, 0, 'Repeat times');
   return Object.freeze({ ...decorator('repeat', options), times });
 }
+
+function timed(type: TimedDecoratorKind, { ms, ...options }: TimedDecoratorOptions): TimedDecoratorDefinition {
+  if (!Number.isFinite(ms) || ms < 0) throw new RangeError('Decorator delay must be finite and nonnegative');
+  return Object.freeze({ ...decorator(type, options), ms });
+}
+export function delay(options: TimedDecoratorOptions): TimedDecoratorDefinition { return timed('delay', options); }
+export function timeout(options: TimedDecoratorOptions): TimedDecoratorDefinition { return timed('timeout', options); }
+export function cooldown(options: TimedDecoratorOptions): TimedDecoratorDefinition { return timed('cooldown', options); }

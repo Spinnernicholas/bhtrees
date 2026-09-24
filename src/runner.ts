@@ -8,6 +8,7 @@ interface WaitToken {
   lastPoll: number;
   poll?: () => void;
 }
+interface TimerRegistration { ready: boolean; dispose(): void }
 interface Frame {
   node: NodeDefinition;
   activationId: number;
@@ -25,6 +26,8 @@ interface Frame {
   started?: boolean;
   lastTick?: number;
   completedIterations?: number;
+  timer?: TimerRegistration;
+  timerStarted?: boolean;
 }
 interface ResumeEvent {
   frame: Frame;
@@ -45,7 +48,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
   if (typeof clock.setTimeout !== 'function' || typeof clock.clearTimeout !== 'function') throw new TypeError('Invalid clock');
   const definitions = new Map<string, NodeDefinition>();
   function validate(node: NodeDefinition, ancestors = new Set<NodeDefinition>()) {
-    if (!node || !['action', 'condition', 'sequence', 'selector', 'inverter', 'forceSuccess', 'forceFailure', 'retry', 'repeat'].includes(node.type)) throw new TypeError('Invalid node');
+    if (!node || !['action', 'condition', 'sequence', 'selector', 'inverter', 'forceSuccess', 'forceFailure', 'retry', 'repeat', 'delay', 'timeout', 'cooldown'].includes(node.type)) throw new TypeError('Invalid node');
     if (![undefined, true, false, 'inherited'].includes(node.reactive)) throw new TypeError('Invalid reactive setting');
     if (ancestors.has(node)) throw new TypeError('Cyclic tree definition');
     if (definitions.has(node.id) && definitions.get(node.id) !== node) throw new TypeError(`Duplicate node id: ${node.id}`);
@@ -71,6 +74,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
   let transitionNumber = 0;
   let queue: ResumeEvent[] = [];
   const stack: Frame[] = [];
+  const cooldowns = new Map<NodeDefinition, TimerRegistration>();
   let rootFrame: Frame | null = null;
   let traversal = 0, traversalOpen = false, yielded = false;
 
@@ -110,12 +114,37 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
     };
   }
 
+  function startTimer(ms: number): TimerRegistration {
+    const timer: TimerRegistration = { ready: false, dispose: () => {} };
+    const registration = registerWait(waits.timer(ms), clock, () => { timer.ready = true; });
+    timer.dispose = registration.dispose;
+    return timer;
+  }
+
+  function releaseTimer(frame: Frame) {
+    const timer = frame.timer;
+    frame.timer = undefined;
+    timer?.dispose();
+  }
+
+  function clearCooldowns(failures: unknown[]) {
+    const timers = [...cooldowns.values()];
+    cooldowns.clear();
+    for (const timer of timers) {
+      try { timer.dispose(); } catch (cause) { failures.push(cause); }
+    }
+  }
+
   function complete(frame: Frame, result: Completion) {
+    releaseTimer(frame);
     haltChildren(frame, 'interrupted');
     stack.pop();
     frame.wait = null;
     const parent = stack.at(-1);
     if (!parent) {
+      const failures: unknown[] = [];
+      clearCooldowns(failures);
+      if (failures.length) throw new AggregateError(failures, 'Cooldown cleanup failed');
       rootFrame = null;
       status = result.status;
       output = result.output;
@@ -183,6 +212,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
     const failures: unknown[] = [];
     queue = [];
     if (rootFrame) halt(rootFrame, reason, failures);
+    clearCooldowns(failures);
     rootFrame = null;
     stack.length = 0;
     return failures;
@@ -193,6 +223,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
     frame.children.clear();
     queue = queue.filter(event => event.frame !== frame);
     try { release(frame); } catch (cause) { failures.push(cause); }
+    try { releaseTimer(frame); } catch (cause) { failures.push(cause); }
     if (frame.node.type === 'action' && frame.node.cancel && frame.started) {
       try { frame.node.cancel(context(frame), reason); } catch (cause) { failures.push(cause); }
     }
@@ -221,6 +252,16 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
       return true;
     }
     if (status !== RUNNING) return false;
+    // An expired active timeout wins before another child transition. Outermost wins ties.
+    const expired = stack.findIndex(frame => frame.node.type === 'timeout' &&
+      frame.timer?.ready && frame.phase !== 'childResult');
+    if (expired >= 0) {
+      const frame = stack[expired];
+      stack.length = expired + 1;
+      haltChildren(frame, 'timeout');
+      complete(frame, { status: FAILURE });
+      return true;
+    }
     const frame = stack.at(-1)!;
     if (frame.phase === 'waiting' && frame.node.type === 'action') {
       if (frame.wait!.lastPoll !== driveNumber) {
@@ -259,12 +300,41 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
       return true;
     }
     if ('child' in frame.node) {
+      if (frame.node.type === 'delay' && !frame.timerStarted) {
+        frame.timerStarted = true;
+        if (frame.node.ms > 0) {
+          frame.timer = startTimer(frame.node.ms);
+          frame.phase = 'waiting';
+          return true;
+        }
+      }
+      if (frame.node.type === 'delay' && frame.timer) {
+        if (!frame.timer.ready) return false;
+        releaseTimer(frame);
+      }
+      if (frame.node.type === 'timeout' && !frame.timerStarted) {
+        frame.timerStarted = true;
+        if (frame.node.ms === 0) { complete(frame, { status: FAILURE }); return true; }
+        frame.timer = startTimer(frame.node.ms);
+      }
+      if (frame.node.type === 'cooldown' && frame.phase === 'enter') {
+        const timer = cooldowns.get(frame.node);
+        if (timer && !timer.ready) { complete(frame, { status: FAILURE }); return true; }
+        if (timer) { cooldowns.delete(frame.node); timer.dispose(); }
+      }
       if (frame.node.type === 'repeat' && frame.node.times === 0) {
         complete(frame, { status: SUCCESS });
         return true;
       }
       if (frame.phase === 'childResult') {
         const result = frame.childResult!;
+        if (frame.node.type === 'delay' || frame.node.type === 'timeout' || frame.node.type === 'cooldown') {
+          if (frame.node.type === 'cooldown' && frame.node.ms > 0) {
+            cooldowns.set(frame.node, startTimer(frame.node.ms));
+          }
+          complete(frame, result);
+          return true;
+        }
         if (frame.node.type === 'retry' || frame.node.type === 'repeat') {
           frame.completedIterations = (frame.completedIterations ?? 0) + 1;
           const finished = frame.node.type === 'retry'
@@ -336,7 +406,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
         reactive: frame.node.reactive ?? 'inherited', effectiveReactive: frame.effectiveReactive,
         onTraversal: stack.includes(frame),
         completedIterations: frame.completedIterations,
-        waitingOn: frame.wait?.kind
+        waitingOn: frame.wait?.kind ?? (frame.node.type === 'delay' && frame.timer ? 'timer' : undefined)
       }))) });
   }
 

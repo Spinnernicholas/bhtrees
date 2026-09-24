@@ -103,7 +103,15 @@ export interface RepeatDefinition extends Omit<DecoratorDefinition, 'type'> {
   readonly type: 'repeat';
   readonly times: number;
 }
-export type NodeDefinition = ActionDefinition | ConditionDefinition | SequenceDefinition | SelectorDefinition | DecoratorDefinition | RetryDefinition | RepeatDefinition;
+export type TimedDecoratorKind = 'delay' | 'timeout' | 'cooldown';
+export interface TimedDecoratorOptions extends DecoratorOptions {
+  ms: number;
+}
+export interface TimedDecoratorDefinition extends Omit<DecoratorDefinition, 'type'> {
+  readonly type: TimedDecoratorKind;
+  readonly ms: number;
+}
+export type NodeDefinition = ActionDefinition | ConditionDefinition | SequenceDefinition | SelectorDefinition | DecoratorDefinition | RetryDefinition | RepeatDefinition | TimedDecoratorDefinition;
 /** Timer handles are opaque and owned by the injected host clock. */
 export interface Clock {
   setTimeout(callback: () => void, ms: number): Value;
