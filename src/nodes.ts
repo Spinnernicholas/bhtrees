@@ -1,5 +1,6 @@
 import type { Reactive, ActionOptions, ActionDefinition, SequenceOptions, SequenceDefinition,
-  SelectorOptions, SelectorDefinition, ConditionOptions, ConditionDefinition } from './types.js';
+  SelectorOptions, SelectorDefinition, ConditionOptions, ConditionDefinition,
+  DecoratorKind, DecoratorOptions, DecoratorDefinition } from './types.js';
 
 export const SUCCESS = 'SUCCESS';
 export const FAILURE = 'FAILURE';
@@ -48,3 +49,15 @@ export function condition({ id, test, reactive = 'inherited' }: ConditionOptions
   }
   return Object.freeze({ type: 'condition', id, test, reactive });
 }
+
+function decorator(type: DecoratorKind, { id, child, reactive = 'inherited' }: DecoratorOptions): DecoratorDefinition {
+  checkReactive(reactive);
+  if (typeof id !== 'string' || !id || !child || typeof child !== 'object') {
+    throw new TypeError('Decorators require an id and child node');
+  }
+  return Object.freeze({ type, id, child, reactive });
+}
+
+export function inverter(options: DecoratorOptions): DecoratorDefinition { return decorator('inverter', options); }
+export function forceSuccess(options: DecoratorOptions): DecoratorDefinition { return decorator('forceSuccess', options); }
+export function forceFailure(options: DecoratorOptions): DecoratorDefinition { return decorator('forceFailure', options); }

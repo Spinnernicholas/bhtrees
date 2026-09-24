@@ -58,7 +58,7 @@ renderer plugin API. Node and headless Chrome checks cover its execution control
 connected block geometry, the complete agent mission, restart, and cancellation. To rerun the real
 browser smoke test, build with `npm run build`, then use `node scripts/check-browser.js <path-to-Chrome-or-Edge>`.
 
-Implemented: immutable action/condition/sequence/selector definitions, isolated runner frames, explicit
+Implemented: immutable action/condition/sequence/selector/decorator definitions, isolated runner frames, explicit
 inputs/outputs and composite bindings, local activation state, promise/timer/event/poll waits with named
 resume handlers, cancellation, bounded ticks, snapshots, and single-transition stepping.
 
@@ -120,6 +120,37 @@ const priorities = selector({ id: 'priorities', reactive: true, steps: [
 
 The `help` service returns a behavior result. If `needsHelp()` becomes true while
 patrol is running, the selector switches to the urgent branch and cancels patrol.
+
+## Result decorators
+
+`inverter({ id, child, reactive? })`, `forceSuccess(...)`, and `forceFailure(...)`
+wrap one child definition. They pass their input to the child and preserve its
+completion output, including failure output. Use the enclosing composite step's
+`input` binding to customize the decorator's input.
+
+| Decorator | Child SUCCESS | Child FAILURE |
+| --- | --- | --- |
+| `inverter` | FAILURE | SUCCESS |
+| `forceSuccess` | SUCCESS | SUCCESS |
+| `forceFailure` | FAILURE | FAILURE |
+
+A running or waiting child stays active until it completes. Exceptions remain
+execution errors, and cancellation still cleans up the child and discards late
+notifications. The decorators follow normal reactivity inheritance; an explicit
+`reactive` setting controls the inherited setting of descendants. Reaching the
+same running child preserves its activation and waits.
+
+```js
+import { condition, inverter } from './dist/index.js';
+
+const notBlocked = inverter({ id: 'not-blocked', child:
+  condition({ id: 'blocked', test: c => c.services.isBlocked(c.input) })
+});
+```
+
+Decorators have their own activation frames. Entering the child and transforming
+its completed result are separate engine transitions, visible when stepping. The
+browser tree views display the wrapped child under its decorator.
 
 ## Reactivity
 

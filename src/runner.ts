@@ -44,11 +44,12 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
   if (typeof clock.setTimeout !== 'function' || typeof clock.clearTimeout !== 'function') throw new TypeError('Invalid clock');
   const definitions = new Map<string, NodeDefinition>();
   function validate(node: NodeDefinition, ancestors = new Set<NodeDefinition>()) {
-    if (!node || !['action', 'condition', 'sequence', 'selector'].includes(node.type)) throw new TypeError('Invalid node');
+    if (!node || !['action', 'condition', 'sequence', 'selector', 'inverter', 'forceSuccess', 'forceFailure'].includes(node.type)) throw new TypeError('Invalid node');
     if (![undefined, true, false, 'inherited'].includes(node.reactive)) throw new TypeError('Invalid reactive setting');
     if (ancestors.has(node)) throw new TypeError('Cyclic tree definition');
     if (definitions.has(node.id) && definitions.get(node.id) !== node) throw new TypeError(`Duplicate node id: ${node.id}`);
     definitions.set(node.id, node);
+    if ('child' in node) validate(node.child, new Set([...ancestors, node]));
     if (node.type === 'sequence' || node.type === 'selector') {
       for (const step of node.steps) {
         if (step.input !== undefined && typeof step.input !== 'function') throw new TypeError('Invalid input binding');
@@ -255,6 +256,19 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
       accept(frame, (frame.node.tick ?? frame.node.enter)!(context(frame)));
       return true;
     }
+    if ('child' in frame.node) {
+      if (frame.phase === 'childResult') {
+        const result = frame.childResult!;
+        const status = frame.node.type === 'inverter'
+          ? result.status === SUCCESS ? FAILURE : SUCCESS
+          : frame.node.type === 'forceSuccess' ? SUCCESS : FAILURE;
+        complete(frame, { status, output: result.output });
+      } else {
+        frame.phase = 'child';
+        push(frame.node.child, frame.input, frame);
+      }
+      return true;
+    }
     if (frame.phase === 'childResult') {
       const result = frame.childResult!;
       if (frame.node.type === 'sequence' && result.status === FAILURE) {
@@ -321,7 +335,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
           prepare(rootFrame);
           // Memory ancestors can resume directly at their retained running child.
           let frame = rootFrame;
-          while ((frame.node.type === 'sequence' || frame.node.type === 'selector') &&
+          while (('child' in frame.node || frame.node.type === 'sequence' || frame.node.type === 'selector') &&
                  !frame.effectiveReactive && frame.children.has(frame.index)) {
             const child = frame.children.get(frame.index)!;
             frame.phase = 'child';

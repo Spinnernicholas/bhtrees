@@ -75,7 +75,19 @@ export type SelectorOptions = SequenceOptions;
 export interface SelectorDefinition extends Omit<SequenceDefinition, 'type'> {
   readonly type: 'selector';
 }
-export type NodeDefinition = ActionDefinition | ConditionDefinition | SequenceDefinition | SelectorDefinition;
+export type DecoratorKind = 'inverter' | 'forceSuccess' | 'forceFailure';
+export interface DecoratorOptions {
+  id: string;
+  child: NodeDefinition;
+  reactive?: Reactive;
+}
+export interface DecoratorDefinition {
+  readonly type: DecoratorKind;
+  readonly id: string;
+  readonly child: NodeDefinition;
+  readonly reactive: Reactive;
+}
+export type NodeDefinition = ActionDefinition | ConditionDefinition | SequenceDefinition | SelectorDefinition | DecoratorDefinition;
 /** Timer handles are opaque and owned by the injected host clock. */
 export interface Clock {
   setTimeout(callback: () => void, ms: number): Value;

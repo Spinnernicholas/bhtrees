@@ -6,6 +6,21 @@ async function until(predicate, message) {
   throw new Error(message);
 }
 try {
+  const { inverter, condition, createRunner } = await import('../../dist/index.js');
+  const { mountTreeView } = await import('./tree-view.js');
+  const target = document.createElement('ol');
+  const tree = inverter({ id: 'inverted', child: condition({ id: 'predicate', test: () => false }) });
+  const view = mountTreeView({ target, tree });
+  for (const mode of ['list', 'blocks']) {
+    view.setMode(mode);
+    view.update(createRunner(tree).tick());
+    check(target.querySelector('[data-node-id="inverted"] .node-children [data-node-id="predicate"]'),
+      'Decorator child is missing from the tree view');
+    check(target.querySelector('.node-end').textContent === 'end inverter', 'Incorrect decorator label');
+    check(target.querySelector('.node-status').textContent === 'SUCCESS', 'Incorrect decorator result');
+  }
+  view.dispose();
+  check(target.children.length === 0, 'Decorator view did not dispose');
   await until(() => frame.contentDocument?.querySelector('#history li'), 'Application did not initialize');
   const doc = frame.contentDocument;
   check(frame.contentWindow.getComputedStyle(doc.querySelector('.playground')).display === 'grid', 'Stylesheet did not load');

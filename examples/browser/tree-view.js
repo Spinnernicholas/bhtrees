@@ -26,9 +26,10 @@ export function mountTreeView({ target, tree, labels = {}, onSelect = () => {} }
     meta.append(element('span', 'node-port', `reactive: ${definition.reactive ?? 'inherited'}`));
     if (binding?.save) meta.append(element('span', 'node-port', `output → ${binding.save}`));
     row.append(meta);
-    if (definition.steps) {
+    const steps = definition.steps ?? (definition.child ? [{ node: definition.child }] : undefined);
+    if (steps) {
       const children = element('ol', 'node-children');
-      for (const step of definition.steps) children.append(build(step.node, step));
+      for (const step of steps) children.append(build(step.node, step));
       row.append(children, element('div', 'node-end', `end ${definition.type}`));
     }
     rows.push({ definition, row, header, status, select });

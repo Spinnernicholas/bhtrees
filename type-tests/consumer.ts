@@ -1,4 +1,4 @@
-import { action, sequence, selector, condition, createRunner, SUCCESS, RUNNING } from 'bhtrees';
+import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, createRunner, SUCCESS, RUNNING } from 'bhtrees';
 import type { ActionContext, Clock, NodeDefinition, RunnerSnapshot, WaitDescriptor } from 'bhtrees';
 
 const clock: Clock = { setTimeout: () => ({ id: 1 }), clearTimeout: handle => { void handle; } };
@@ -57,3 +57,13 @@ condition({ id: 'no-wait', test: ctx => {
 } });
 // @ts-expect-error Selectors require node definitions in their steps.
 selector({ id: 'invalid-step', steps: [{ node: {} }] });
+
+const decorated: NodeDefinition = inverter({ id: 'invert', child: forceSuccess({ id: 'success',
+  child: forceFailure({ id: 'failure', reactive: false, child: priority }) }) });
+createRunner(decorated);
+// @ts-expect-error Decorators require one child definition.
+inverter({ id: 'missing-child' });
+// @ts-expect-error Decorators accept one child, not a steps array.
+forceSuccess({ id: 'many', steps: [{ node: tree }] });
+// @ts-expect-error Decorator children must be node definitions.
+forceFailure({ id: 'invalid-child', child: {} });
