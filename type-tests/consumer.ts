@@ -1,4 +1,4 @@
-import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, delay, timeout, cooldown, subtree, parallel, createRunner, SUCCESS, RUNNING } from 'bhtrees';
+import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, delay, timeout, cooldown, subtree, parallel, createBlackboard, createRunner, SUCCESS, RUNNING } from 'bhtrees';
 import type { ActionContext, Clock, NodeDefinition, RunnerSnapshot, WaitDescriptor } from 'bhtrees';
 
 const clock: Clock = { setTimeout: () => ({ id: 1 }), clearTimeout: handle => { void handle; } };
@@ -115,3 +115,20 @@ parallel({ id: 'invalid-save', successThreshold: 1, failureThreshold: 1,
   // @ts-expect-error Parallel outputs require a reducer instead of shared saves.
   steps: [{ node: tree, save: 'collision' }]
 });
+
+const board = createBlackboard({ count: 0 });
+const unsubscribe = board.subscribe(change => {
+  const revision: number = change.revision;
+  // @ts-expect-error Change records are readonly.
+  change.key = 'changed';
+  void revision;
+});
+board.set('count', board.get('count') + 1);
+board.has('count'); board.delete('count'); unsubscribe();
+createRunner(condition({ id: 'board-condition', test: ctx => ctx.blackboard?.has('ready') ?? false }), { blackboard: board });
+// @ts-expect-error Blackboard keys must be strings.
+board.set(42, 'value');
+// @ts-expect-error Snapshot containers are readonly.
+board.snapshot().values.count = 1;
+// @ts-expect-error Runner board injection must implement the blackboard API.
+createRunner(tree, { blackboard: {} });

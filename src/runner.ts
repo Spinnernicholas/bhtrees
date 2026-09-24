@@ -44,11 +44,15 @@ import { SUCCESS, FAILURE, RUNNING } from './nodes.js';
 import { waits, registerWait } from './waits.js';
 
 /** Create an isolated execution instance. Inputs and outputs are immutable by contract. */
-export function createRunner(root: NodeDefinition, { input, services = {}, maxStepsPerTick = 1000,
+export function createRunner(root: NodeDefinition, { input, services = {}, blackboard, maxStepsPerTick = 1000,
   clock = { setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms), clearTimeout: id => globalThis.clearTimeout(id) }
 }: RunnerOptions = {}): Runner {
   if (!Number.isInteger(maxStepsPerTick) || maxStepsPerTick < 1) throw new RangeError('Invalid step budget');
   if (typeof clock.setTimeout !== 'function' || typeof clock.clearTimeout !== 'function') throw new TypeError('Invalid clock');
+  if (blackboard !== undefined && (!blackboard ||
+      ['get', 'has', 'set', 'delete', 'snapshot', 'subscribe'].some(key => typeof (blackboard as unknown as Record<string, unknown>)[key] !== 'function'))) {
+    throw new TypeError('Invalid blackboard');
+  }
   const definitions = new Map<string, NodeDefinition>();
   function validate(node: NodeDefinition, ancestors = new Set<NodeDefinition>()) {
     if (!node || !['action', 'condition', 'sequence', 'selector', 'inverter', 'forceSuccess', 'forceFailure', 'retry', 'repeat', 'delay', 'timeout', 'cooldown', 'subtree', 'parallel'].includes(node.type)) throw new TypeError('Invalid node');
@@ -112,7 +116,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
   }
 
   function context(frame: Frame): ActionContext {
-    return { input: frame.input, local: frame.local, services,
+    return { input: frame.input, local: frame.local, services, blackboard,
       success: value => ({ status: SUCCESS, output: value }),
       failure: value => ({ status: FAILURE, output: value }),
       wait: waits
@@ -304,7 +308,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
       return true;
     }
     if (frame.node.type === 'condition') {
-      const result: unknown = frame.node.test({ input: frame.input, local: frame.local, services });
+      const result: unknown = frame.node.test({ input: frame.input, local: frame.local, services, blackboard });
       if (typeof result !== 'boolean') {
         // Observe rejected promises from invalid JavaScript predicates, as for poll waits.
         if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
@@ -459,7 +463,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
       for (const child of frame.children.values()) collect(child);
     }
     if (rootFrame) collect(rootFrame);
-    return Object.freeze({ status, output, error, paused, tick: tickNumber, transitions: transitionNumber,
+    return Object.freeze({ blackboard: blackboard?.snapshot(), status, output, error, paused, tick: tickNumber, transitions: transitionNumber,
       queuedResumes: queue.length,
       frames: Object.freeze(frames.map(frame => Object.freeze({
         nodeId: frame.node.id, activationId: frame.activationId, parentActivationId: frame.parentActivationId, parentChildIndex: frame.parentChildIndex, phase: frame.phase,

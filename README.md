@@ -87,7 +87,7 @@ available for asynchronous waits.
 ## Selectors and conditions
 
 `condition({ id, test })` evaluates `test(ctx)` once per activation. It receives
-`input`, `local`, and `services`; return `true` for `SUCCESS` or `false` for `FAILURE`.
+`input`, `local`, `services`, and optional `blackboard`; return `true` for `SUCCESS` or `false` for `FAILURE`.
 Non-boolean results (including promises) produce an execution error. Exceptions
 also produce `errored`. Conditions have no wait or resume API.
 
@@ -322,6 +322,56 @@ multiple occurrences of the same definition under one parent. Browser rows match
 both ancestry and child position. Concurrent completions of a shared cooldown
 definition refresh its single runner-local cooldown timer.
 
+## Optional blackboards
+
+`createBlackboard(initial?)` creates caller-owned observable state. Inject it with
+`createRunner(tree, { blackboard })`; actions (including resume/cancel handlers)
+and conditions receive it as `ctx.blackboard`. Omit the option to disable it:
+ordinary inputs, outputs, and local scopes work unchanged. Create a board per
+runner for isolation, or pass the same board explicitly to share state. Subtrees
+and parallel branches inherit that runner's board. Runners never dispose boards
+or their subscribers, including on cancellation or terminal completion.
+
+```js
+import { createBlackboard, createRunner, condition } from './dist/index.js';
+
+const blackboard = createBlackboard({ ready: false });
+const unsubscribe = blackboard.subscribe(change => console.log(change));
+const tree = condition({ id: 'ready', test: c => c.blackboard.get('ready') });
+blackboard.set('ready', true);
+const runner = createRunner(tree, { blackboard });
+console.log(runner.tick().status); // SUCCESS
+unsubscribe();
+```
+
+Boards expose `get`, `has`, `set`, `delete`, `subscribe`, `snapshot`, and `revision`.
+Keys are strings; `has` distinguishes absent keys from stored `undefined` values.
+Initial state is copied from own enumerable string properties of a plain record.
+`delete` reports whether a key existed. Setting an existing key to the same value
+according to `Object.is`, or deleting an absent key, does not emit a change.
+
+Subscriptions receive frozen `{ revision, type, key, hadValue, previous, value }`
+records for changes after subscription, without an initial event. Revisions start
+at zero and increment once per change. Notifications are synchronous, in subscription
+order; writes from listeners queue their notifications so observers receive revisions
+in order. A listener's live reads may already reflect a later reentrant write: use
+the event's values to inspect that specific change. Unsubscribe functions are
+idempotent, and duplicate subscriptions are independently disposable. New listeners
+join subsequent events; removing a listener prevents further delivery to it.
+
+Subscriber exceptions are collected while notifying the remaining listeners, then
+reported as an `AggregateError`. Writes are already committed and are not rolled
+back. If an action's write triggers such an error, normal runner error handling
+applies. Notifications cannot reenter an executing runner.
+
+`board.snapshot()` returns a frozen `{ revision, values }` container; runner
+snapshots include it as `blackboard`. Older snapshots retain top-level values,
+but application object values are not cloned or frozen. Arbitrary nested mutation
+is not observable: replace a value through `set` to notify observers. No unbounded
+history is retained. External writes are allowed while execution is paused; tree
+evaluation resumes only on step/continue. The full debugger watchpoint controller
+remains planned.
+
 ## Reactivity
 
 Every node accepts `reactive: true | false | 'inherited'`. The default is
@@ -432,7 +482,7 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
-Not implemented yet: remaining node/resume types, blackboards, JSON/YAML documents,
+Not implemented yet: remaining resume types, declarative bindings, JSON/YAML documents,
 configuration and extensions, debugger controller/UI, recordings/checkpoints,
 standalone bundles or environment adapters. The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.

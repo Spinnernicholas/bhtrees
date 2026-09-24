@@ -16,10 +16,34 @@ export type WaitDescriptor = { status: 'RUNNING'; resolve?: string; reject?: str
   { kind: 'any' | 'all'; children: readonly WaitDescriptor[] }
 );
 export type ActionResult = BehaviorStatus | Completion | { status: 'RUNNING'; kind?: undefined } | WaitDescriptor;
+export interface BlackboardSnapshot {
+  readonly revision: number;
+  readonly values: Readonly<Record<string, Value>>;
+}
+export interface BlackboardChange {
+  readonly revision: number;
+  readonly type: 'set' | 'delete';
+  readonly key: string;
+  readonly hadValue: boolean;
+  readonly previous: Value;
+  readonly value: Value;
+}
+export type BlackboardListener = (change: BlackboardChange) => void;
+/** Caller-owned state; sharing a board is explicit, and runners never dispose it. */
+export interface Blackboard {
+  readonly revision: number;
+  has(key: string): boolean;
+  get(key: string): Value;
+  set(key: string, value: Value): void;
+  delete(key: string): boolean;
+  snapshot(): BlackboardSnapshot;
+  subscribe(listener: BlackboardListener): () => void;
+}
 export interface ActionContext {
   input: Value;
   local: Record<string, Value>;
   services: Record<string, Value>;
+  blackboard?: Blackboard;
   success(output?: Value): Completion;
   failure(output?: Value): Completion;
   wait: typeof waits;
@@ -57,7 +81,7 @@ export interface SequenceDefinition {
   readonly output: (scope: Scope) => Value;
   readonly reactive: Reactive;
 }
-export type ConditionContext = Pick<ActionContext, 'input' | 'local' | 'services'>;
+export type ConditionContext = Pick<ActionContext, 'input' | 'local' | 'services' | 'blackboard'>;
 export interface ConditionOptions {
   id: string;
   test: (context: ConditionContext) => boolean;
@@ -154,6 +178,7 @@ export interface Clock {
 export interface RunnerOptions {
   input?: Value;
   services?: Record<string, Value>;
+  blackboard?: Blackboard;
   maxStepsPerTick?: number;
   clock?: Clock;
 }
@@ -177,6 +202,7 @@ export interface FrameSnapshot {
   readonly waitingOn?: WaitKind;
 }
 export interface RunnerSnapshot {
+  readonly blackboard?: BlackboardSnapshot;
   readonly status: RunnerStatus;
   readonly output: Value;
   readonly error: unknown;
