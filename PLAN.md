@@ -1,6 +1,6 @@
 # BHTrees implementation plan
 
-Status: development started. The engine supports synchronous boolean conditions, memory/reactive selectors, inverter/force-result decorators, tick actions, promise/timer/event/poll waits, nested any/all groups, and an injectable timer clock. Nodes support tri-state reactive inheritance; sequences and selectors preserve reached running children and interrupt unreachable branches. The browser playground includes execution controls, tree inspection, event history, and a simulation clock. The core now uses strict TypeScript with generated ESM JavaScript and declarations; remaining Phase 2 nodes/blackboards remain pending. The playground is not yet the full debugger controller or renderer extension API. See README.md for capabilities and limitations.
+Status: development started. The engine supports synchronous boolean conditions, memory/reactive selectors, inverter/force-result and retry/repeat decorators, tick actions, promise/timer/event/poll waits, nested any/all groups, and an injectable timer clock. Nodes support tri-state reactive inheritance; sequences and selectors preserve reached running children and interrupt unreachable branches. The browser playground includes execution controls, tree inspection, event history, and a simulation clock. The core now uses strict TypeScript with generated ESM JavaScript and declarations; remaining Phase 2 nodes/blackboards remain pending. The playground is not yet the full debugger controller or renderer extension API. See README.md for capabilities and limitations.
 
 ## Goals
 
@@ -406,7 +406,9 @@ cancelled work; stepping pauses at a documented transition; no core host globals
   Implemented: memory/reactive sequences and selectors, synchronous conditions,
   retained activations, priority preemption, bounded stepping/ticks, and
   inverter/force-success/force-failure decorators with preserved output and cleanup.
-  Next: time/retry/repeat decorators,
+  Retry/repeat support explicit finite/infinite counts, fresh attempts, and yielding
+  between attempts for reactive preemption.
+  Next: delay/timeout/cooldown decorators,
   parallel policies, and subtree invocation.
 - Add optional blackboards, declarative bindings, subtree scopes, and output reducers.
 

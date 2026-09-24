@@ -1,6 +1,7 @@
 import type { Reactive, ActionOptions, ActionDefinition, SequenceOptions, SequenceDefinition,
   SelectorOptions, SelectorDefinition, ConditionOptions, ConditionDefinition,
-  DecoratorKind, DecoratorOptions, DecoratorDefinition } from './types.js';
+  DecoratorKind, DecoratorOptions, DecoratorDefinition,
+  RetryOptions, RetryDefinition, RepeatOptions, RepeatDefinition } from './types.js';
 
 export const SUCCESS = 'SUCCESS';
 export const FAILURE = 'FAILURE';
@@ -50,7 +51,7 @@ export function condition({ id, test, reactive = 'inherited' }: ConditionOptions
   return Object.freeze({ type: 'condition', id, test, reactive });
 }
 
-function decorator(type: DecoratorKind, { id, child, reactive = 'inherited' }: DecoratorOptions): DecoratorDefinition {
+function decorator<T extends DecoratorKind | 'retry' | 'repeat'>(type: T, { id, child, reactive = 'inherited' }: DecoratorOptions) {
   checkReactive(reactive);
   if (typeof id !== 'string' || !id || !child || typeof child !== 'object') {
     throw new TypeError('Decorators require an id and child node');
@@ -61,3 +62,19 @@ function decorator(type: DecoratorKind, { id, child, reactive = 'inherited' }: D
 export function inverter(options: DecoratorOptions): DecoratorDefinition { return decorator('inverter', options); }
 export function forceSuccess(options: DecoratorOptions): DecoratorDefinition { return decorator('forceSuccess', options); }
 export function forceFailure(options: DecoratorOptions): DecoratorDefinition { return decorator('forceFailure', options); }
+
+function checkCount(value: number, minimum: number, name: string) {
+  if (value !== Infinity && (!Number.isSafeInteger(value) || value < minimum)) {
+    throw new RangeError(`${name} must be a safe integer >= ${minimum} or Infinity`);
+  }
+}
+
+export function retry({ attempts, ...options }: RetryOptions): RetryDefinition {
+  checkCount(attempts, 1, 'Retry attempts');
+  return Object.freeze({ ...decorator('retry', options), attempts });
+}
+
+export function repeat({ times, ...options }: RepeatOptions): RepeatDefinition {
+  checkCount(times, 0, 'Repeat times');
+  return Object.freeze({ ...decorator('repeat', options), times });
+}

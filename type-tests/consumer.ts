@@ -1,4 +1,4 @@
-import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, createRunner, SUCCESS, RUNNING } from 'bhtrees';
+import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, createRunner, SUCCESS, RUNNING } from 'bhtrees';
 import type { ActionContext, Clock, NodeDefinition, RunnerSnapshot, WaitDescriptor } from 'bhtrees';
 
 const clock: Clock = { setTimeout: () => ({ id: 1 }), clearTimeout: handle => { void handle; } };
@@ -67,3 +67,12 @@ inverter({ id: 'missing-child' });
 forceSuccess({ id: 'many', steps: [{ node: tree }] });
 // @ts-expect-error Decorator children must be node definitions.
 forceFailure({ id: 'invalid-child', child: {} });
+
+createRunner(retry({ id: 'retry', child: decorated, attempts: 3 }));
+createRunner(repeat({ id: 'repeat', child: decorated, times: Infinity }));
+const completed: number | undefined = snapshot.frames[0]?.completedIterations;
+void completed;
+// @ts-expect-error Retry requires an explicit total-attempt limit.
+retry({ id: 'missing-limit', child: tree });
+// @ts-expect-error Repeat requires a numeric iteration count.
+repeat({ id: 'bad-limit', child: tree, times: 'forever' });

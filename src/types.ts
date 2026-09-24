@@ -87,7 +87,23 @@ export interface DecoratorDefinition {
   readonly child: NodeDefinition;
   readonly reactive: Reactive;
 }
-export type NodeDefinition = ActionDefinition | ConditionDefinition | SequenceDefinition | SelectorDefinition | DecoratorDefinition;
+export interface RetryOptions extends DecoratorOptions {
+  /** Total attempts, including the first; positive safe integer or Infinity. */
+  attempts: number;
+}
+export interface RepeatOptions extends DecoratorOptions {
+  /** Required successful iterations; nonnegative safe integer or Infinity. */
+  times: number;
+}
+export interface RetryDefinition extends Omit<DecoratorDefinition, 'type'> {
+  readonly type: 'retry';
+  readonly attempts: number;
+}
+export interface RepeatDefinition extends Omit<DecoratorDefinition, 'type'> {
+  readonly type: 'repeat';
+  readonly times: number;
+}
+export type NodeDefinition = ActionDefinition | ConditionDefinition | SequenceDefinition | SelectorDefinition | DecoratorDefinition | RetryDefinition | RepeatDefinition;
 /** Timer handles are opaque and owned by the injected host clock. */
 export interface Clock {
   setTimeout(callback: () => void, ms: number): Value;
@@ -101,6 +117,8 @@ export interface RunnerOptions {
 }
 export type FramePhase = 'enter' | 'running' | 'waiting' | 'child' | 'childResult';
 export interface FrameSnapshot {
+  /** Finished child attempts for retry/repeat frames, including failures. */
+  readonly completedIterations?: number;
   readonly nodeId: string;
   readonly activationId: number;
   readonly phase: FramePhase;

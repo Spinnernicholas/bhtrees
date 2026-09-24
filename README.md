@@ -152,6 +152,39 @@ Decorators have their own activation frames. Entering the child and transforming
 its completed result are separate engine transitions, visible when stepping. The
 browser tree views display the wrapped child under its decorator.
 
+## Retry and repeat
+
+`retry({ id, child, attempts, reactive? })` retries a failed child until it succeeds
+or reaches `attempts` total attempts (including the first). It returns the final
+child's status and output. `attempts` must be a positive safe integer or `Infinity`.
+
+`repeat({ id, child, times, reactive? })` repeats successful children, stops at the
+first failure, and succeeds after `times` successes. It returns the last child's
+output. `times` must be a nonnegative safe integer or `Infinity`; zero succeeds
+without executing the child and returns no output. Both counts are required.
+
+```js
+import { action, retry, repeat } from './dist/index.js';
+
+const delivery = retry({ id: 'delivery', attempts: 3, child:
+  action({ id: 'try-delivery', tick: c => c.services.deliver(c.input) })
+});
+const deliveries = repeat({ id: 'deliveries', times: 5, child: delivery });
+```
+
+Each new attempt gets a fresh child activation, locals, and composite scope, with
+the same input supplied to the decorator. A running/waiting attempt retains its
+activation until completion. Errors stop execution immediately; cancellation or
+reactive preemption releases current waits and prevents further attempts. Loop
+counts belong to the decorator activation, so interrupting and later reentering
+it resets the count. Snapshots expose `completedIterations` on retry/repeat frames
+(starting at zero and counting all finished attempts, including failures).
+
+When another attempt is needed, the decorator yields `RUNNING` before starting it,
+even if transition budget remains. This lets reactive ancestors recheck guards
+between attempts, including infinite loops. Smaller budgets and debugger steps
+can split one attempt across drives. Paused ticks never start a new attempt.
+
 ## Reactivity
 
 Every node accepts `reactive: true | false | 'inherited'`. The default is

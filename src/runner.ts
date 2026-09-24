@@ -24,6 +24,7 @@ interface Frame {
   childResult?: Completion;
   started?: boolean;
   lastTick?: number;
+  completedIterations?: number;
 }
 interface ResumeEvent {
   frame: Frame;
@@ -44,7 +45,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
   if (typeof clock.setTimeout !== 'function' || typeof clock.clearTimeout !== 'function') throw new TypeError('Invalid clock');
   const definitions = new Map<string, NodeDefinition>();
   function validate(node: NodeDefinition, ancestors = new Set<NodeDefinition>()) {
-    if (!node || !['action', 'condition', 'sequence', 'selector', 'inverter', 'forceSuccess', 'forceFailure'].includes(node.type)) throw new TypeError('Invalid node');
+    if (!node || !['action', 'condition', 'sequence', 'selector', 'inverter', 'forceSuccess', 'forceFailure', 'retry', 'repeat'].includes(node.type)) throw new TypeError('Invalid node');
     if (![undefined, true, false, 'inherited'].includes(node.reactive)) throw new TypeError('Invalid reactive setting');
     if (ancestors.has(node)) throw new TypeError('Cyclic tree definition');
     if (definitions.has(node.id) && definitions.get(node.id) !== node) throw new TypeError(`Duplicate node id: ${node.id}`);
@@ -79,6 +80,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
       const reactive = node.reactive ?? 'inherited';
       frame = { node, activationId: ++serial, input: value, local: Object.create(null),
         vars: Object.create(null), phase: 'enter', index: 0, last: undefined, wait: null,
+        completedIterations: node.type === 'retry' || node.type === 'repeat' ? 0 : undefined,
         children: new Map(), effectiveReactive: reactive === 'inherited' ? parent?.effectiveReactive ?? false : reactive };
       if (parent) parent.children.set(parent.index, frame);
       else rootFrame = frame;
@@ -257,8 +259,26 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
       return true;
     }
     if ('child' in frame.node) {
+      if (frame.node.type === 'repeat' && frame.node.times === 0) {
+        complete(frame, { status: SUCCESS });
+        return true;
+      }
       if (frame.phase === 'childResult') {
         const result = frame.childResult!;
+        if (frame.node.type === 'retry' || frame.node.type === 'repeat') {
+          frame.completedIterations = (frame.completedIterations ?? 0) + 1;
+          const finished = frame.node.type === 'retry'
+            ? result.status === SUCCESS || frame.completedIterations >= frame.node.attempts
+            : result.status === FAILURE || frame.completedIterations >= frame.node.times;
+          if (finished) complete(frame, result);
+          else {
+            frame.childResult = undefined;
+            frame.phase = 'enter';
+            // Yield at iteration boundaries so reactive ancestors can preempt even infinite loops.
+            yielded = true;
+          }
+          return true;
+        }
         const status = frame.node.type === 'inverter'
           ? result.status === SUCCESS ? FAILURE : SUCCESS
           : frame.node.type === 'forceSuccess' ? SUCCESS : FAILURE;
@@ -315,6 +335,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
         vars: Object.freeze({ ...frame.vars }), childIndex: frame.index,
         reactive: frame.node.reactive ?? 'inherited', effectiveReactive: frame.effectiveReactive,
         onTraversal: stack.includes(frame),
+        completedIterations: frame.completedIterations,
         waitingOn: frame.wait?.kind
       }))) });
   }
