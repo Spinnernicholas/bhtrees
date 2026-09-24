@@ -12,6 +12,7 @@ interface TimerRegistration { ready: boolean; dispose(): void }
 interface Frame {
   node: NodeDefinition;
   activationId: number;
+  parentActivationId: number | null;
   input: Value;
   local: Record<string, Value>;
   vars: Record<string, Value>;
@@ -48,7 +49,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
   if (typeof clock.setTimeout !== 'function' || typeof clock.clearTimeout !== 'function') throw new TypeError('Invalid clock');
   const definitions = new Map<string, NodeDefinition>();
   function validate(node: NodeDefinition, ancestors = new Set<NodeDefinition>()) {
-    if (!node || !['action', 'condition', 'sequence', 'selector', 'inverter', 'forceSuccess', 'forceFailure', 'retry', 'repeat', 'delay', 'timeout', 'cooldown'].includes(node.type)) throw new TypeError('Invalid node');
+    if (!node || !['action', 'condition', 'sequence', 'selector', 'inverter', 'forceSuccess', 'forceFailure', 'retry', 'repeat', 'delay', 'timeout', 'cooldown', 'subtree'].includes(node.type)) throw new TypeError('Invalid node');
     if (![undefined, true, false, 'inherited'].includes(node.reactive)) throw new TypeError('Invalid reactive setting');
     if (ancestors.has(node)) throw new TypeError('Cyclic tree definition');
     if (definitions.has(node.id) && definitions.get(node.id) !== node) throw new TypeError(`Duplicate node id: ${node.id}`);
@@ -82,7 +83,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
     let frame = parent?.children.get(parent.index);
     if (!frame) {
       const reactive = node.reactive ?? 'inherited';
-      frame = { node, activationId: ++serial, input: value, local: Object.create(null),
+      frame = { node, activationId: ++serial, parentActivationId: parent?.activationId ?? null, input: value, local: Object.create(null),
         vars: Object.create(null), phase: 'enter', index: 0, last: undefined, wait: null,
         completedIterations: node.type === 'retry' || node.type === 'repeat' ? 0 : undefined,
         children: new Map(), effectiveReactive: reactive === 'inherited' ? parent?.effectiveReactive ?? false : reactive };
@@ -328,6 +329,12 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
       }
       if (frame.phase === 'childResult') {
         const result = frame.childResult!;
+        if (frame.node.type === 'subtree') {
+          frame.last = result.output;
+          const output = frame.node.output(scope(frame), Object.freeze({ ...result }));
+          complete(frame, { status: result.status, output });
+          return true;
+        }
         if (frame.node.type === 'delay' || frame.node.type === 'timeout' || frame.node.type === 'cooldown') {
           if (frame.node.type === 'cooldown' && frame.node.ms > 0) {
             cooldowns.set(frame.node, startTimer(frame.node.ms));
@@ -355,7 +362,10 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
         complete(frame, { status, output: result.output });
       } else {
         frame.phase = 'child';
-        push(frame.node.child, frame.input, frame);
+        const retained = frame.children.get(frame.index);
+        const input = retained ? retained.input : frame.node.type === 'subtree' && frame.node.input
+          ? frame.node.input(scope(frame)) : frame.input;
+        push(frame.node.child, input, frame);
       }
       return true;
     }
@@ -400,7 +410,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, maxSt
     return Object.freeze({ status, output, error, paused, tick: tickNumber, transitions: transitionNumber,
       queuedResumes: queue.length,
       frames: Object.freeze(frames.map(frame => Object.freeze({
-        nodeId: frame.node.id, activationId: frame.activationId, phase: frame.phase,
+        nodeId: frame.node.id, activationId: frame.activationId, parentActivationId: frame.parentActivationId, phase: frame.phase,
         input: frame.input, local: Object.freeze({ ...frame.local }),
         vars: Object.freeze({ ...frame.vars }), childIndex: frame.index,
         reactive: frame.node.reactive ?? 'inherited', effectiveReactive: frame.effectiveReactive,

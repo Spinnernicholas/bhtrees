@@ -234,6 +234,41 @@ processes that state. Timer callbacks only mark readiness; they never execute a
 child or cancel work directly. Supply a simulation clock to control elapsed time.
 Errors, including cleanup errors, remain execution errors.
 
+## Subtree calls
+
+`subtree({ id, child, input?, output?, reactive? })` invokes an existing definition
+without copying it. Give each call site its own ID and reuse the same `child`
+object. Each invocation gets fresh activation locals and composite scopes;
+concurrent runners also keep separate execution state. Inputs/outputs remain
+immutable by contract, not deep copies. Services remain runner-wide, and cooldowns
+inside a shared definition retain their documented per-definition, per-runner scope.
+
+`input(scope)` runs once when entering the child; by default the call passes its
+own input through. Retained running/waiting calls keep that captured child input.
+`output(scope, result)` runs for either success or failure and maps only output;
+the child status is preserved. `scope.input` is the call's original input and
+`scope.last` is the child's output. `result` is a frozen completion wrapper with
+`status` and `output`. The default mapper returns `scope.last`. Child-private
+variables never merge into the caller's scope; bindings explicitly carry data
+across the boundary. Binding exceptions become execution errors.
+
+```js
+import { action, sequence, subtree } from './dist/index.js';
+
+const double = action({ id: 'double', tick: c => c.success(c.input * 2) });
+const calls = sequence({ id: 'calls', steps: [
+  { node: subtree({ id: 'first-call', child: double, input: () => 2 }), save: 'first' },
+  { node: subtree({ id: 'second-call', child: double, input: () => 3 }), save: 'second' }
+], output: scope => scope.vars });
+```
+
+Subtree calls follow normal reactivity inheritance and cancellation rules; input
+mapping, child execution, and completion mapping run at engine boundaries. Recursive
+cycles are rejected. Different definition objects cannot reuse an ID within a tree.
+Snapshots expose `parentActivationId` (`null` at the root) so repeated definition
+references can be distinguished by activation ancestry. Browser rows use that
+ancestry to match live status; selection is still definition-based.
+
 ## Reactivity
 
 Every node accepts `reactive: true | false | 'inherited'`. The default is

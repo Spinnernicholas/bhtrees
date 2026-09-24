@@ -1,6 +1,6 @@
 # BHTrees implementation plan
 
-Status: development started. The engine supports synchronous boolean conditions, memory/reactive selectors, inverter/force-result, retry/repeat, and delay/timeout/cooldown decorators, tick actions, promise/timer/event/poll waits, nested any/all groups, and an injectable timer clock. Nodes support tri-state reactive inheritance; sequences and selectors preserve reached running children and interrupt unreachable branches. The browser playground includes execution controls, tree inspection, event history, and a simulation clock. The core now uses strict TypeScript with generated ESM JavaScript and declarations; remaining Phase 2 nodes/blackboards remain pending. The playground is not yet the full debugger controller or renderer extension API. See README.md for capabilities and limitations.
+Status: development started. The engine supports reusable subtree calls with explicit bindings, synchronous boolean conditions, memory/reactive selectors, inverter/force-result, retry/repeat, and delay/timeout/cooldown decorators, tick actions, promise/timer/event/poll waits, nested any/all groups, and an injectable timer clock. Nodes support tri-state reactive inheritance; sequences and selectors preserve reached running children and interrupt unreachable branches. The browser playground includes execution controls, tree inspection, event history, and a simulation clock. The core now uses strict TypeScript with generated ESM JavaScript and declarations; remaining Phase 2 nodes/blackboards remain pending. The playground is not yet the full debugger controller or renderer extension API. See README.md for capabilities and limitations.
 
 ## Goals
 
@@ -410,7 +410,9 @@ cancelled work; stepping pauses at a documented transition; no core host globals
   between attempts for reactive preemption.
   Delay/timeout/cooldown use the injected timer clock, define expiry precedence,
   and clean up timers on cancellation and terminal completion.
-  Next: parallel policies and subtree invocation.
+  Subtree invocation supports isolated scopes, input/output mappings, and parent
+  activation IDs for shared-definition inspection.
+  Next: parallel policies and output reducers.
 - Add optional blackboards, declarative bindings, subtree scopes, and output reducers.
 
 Gate: deterministic scheduler tests cover cancellation races, simultaneous waits,

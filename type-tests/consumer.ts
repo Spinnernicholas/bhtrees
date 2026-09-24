@@ -1,4 +1,4 @@
-import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, delay, timeout, cooldown, createRunner, SUCCESS, RUNNING } from 'bhtrees';
+import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, delay, timeout, cooldown, subtree, createRunner, SUCCESS, RUNNING } from 'bhtrees';
 import type { ActionContext, Clock, NodeDefinition, RunnerSnapshot, WaitDescriptor } from 'bhtrees';
 
 const clock: Clock = { setTimeout: () => ({ id: 1 }), clearTimeout: handle => { void handle; } };
@@ -86,3 +86,17 @@ delay({ id: 'missing-duration', child: tree });
 timeout({ id: 'bad-duration', ms: '100', child: tree });
 // @ts-expect-error Cooldown wraps a node definition.
 cooldown({ id: 'bad-child', ms: 10, child: {} });
+
+createRunner(subtree({ id: 'call', child: tree, input: scope => scope.input,
+  output: (scope, result) => {
+    // @ts-expect-error Subtree output mappings cannot change the child status.
+    result.status = 'SUCCESS';
+    return { value: scope.last, status: result.status };
+  }
+}));
+const parentId: number | null = snapshot.frames[0].parentActivationId;
+void parentId;
+// @ts-expect-error Subtree input bindings are functions.
+subtree({ id: 'invalid-input', child: tree, input: 42 });
+// @ts-expect-error Subtree calls require a child definition.
+subtree({ id: 'missing-definition' });

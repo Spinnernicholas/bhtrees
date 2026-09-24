@@ -6,7 +6,7 @@ async function until(predicate, message) {
   throw new Error(message);
 }
 try {
-  const { inverter, condition, createRunner } = await import('../../dist/index.js');
+  const { inverter, condition, createRunner, action, sequence, subtree, RUNNING } = await import('../../dist/index.js');
   const { mountTreeView } = await import('./tree-view.js');
   const target = document.createElement('ol');
   const tree = inverter({ id: 'inverted', child: condition({ id: 'predicate', test: () => false }) });
@@ -21,6 +21,18 @@ try {
   }
   view.dispose();
   check(target.children.length === 0, 'Decorator view did not dispose');
+  const shared = action({ id: 'shared-leaf', tick: () => RUNNING });
+  const calls = sequence({ id: 'calls', steps: [
+    { node: subtree({ id: 'first-call', child: shared }) },
+    { node: subtree({ id: 'second-call', child: shared }) }
+  ] });
+  const callView = mountTreeView({ target, tree: calls });
+  callView.update(createRunner(calls).tick());
+  check(target.querySelector('[data-node-id="first-call"] [data-node-id="shared-leaf"]').classList.contains('active'),
+    'Active subtree occurrence was not matched');
+  check(!target.querySelector('[data-node-id="second-call"] [data-node-id="shared-leaf"]').classList.contains('active'),
+    'Inactive shared definition occurrence was marked active');
+  callView.dispose();
   await until(() => frame.contentDocument?.querySelector('#history li'), 'Application did not initialize');
   const doc = frame.contentDocument;
   check(frame.contentWindow.getComputedStyle(doc.querySelector('.playground')).display === 'grid', 'Stylesheet did not load');

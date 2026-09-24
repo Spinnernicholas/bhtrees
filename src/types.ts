@@ -111,7 +111,17 @@ export interface TimedDecoratorDefinition extends Omit<DecoratorDefinition, 'typ
   readonly type: TimedDecoratorKind;
   readonly ms: number;
 }
-export type NodeDefinition = ActionDefinition | ConditionDefinition | SequenceDefinition | SelectorDefinition | DecoratorDefinition | RetryDefinition | RepeatDefinition | TimedDecoratorDefinition;
+export interface SubtreeOptions extends DecoratorOptions {
+  input?: (scope: Scope) => Value;
+  /** Runs for success and failure; maps output without changing status. */
+  output?: (scope: Scope, result: Readonly<Completion>) => Value;
+}
+export interface SubtreeDefinition extends Omit<DecoratorDefinition, 'type'> {
+  readonly type: 'subtree';
+  readonly input?: (scope: Scope) => Value;
+  readonly output: (scope: Scope, result: Readonly<Completion>) => Value;
+}
+export type NodeDefinition = ActionDefinition | ConditionDefinition | SequenceDefinition | SelectorDefinition | DecoratorDefinition | RetryDefinition | RepeatDefinition | TimedDecoratorDefinition | SubtreeDefinition;
 /** Timer handles are opaque and owned by the injected host clock. */
 export interface Clock {
   setTimeout(callback: () => void, ms: number): Value;
@@ -129,6 +139,7 @@ export interface FrameSnapshot {
   readonly completedIterations?: number;
   readonly nodeId: string;
   readonly activationId: number;
+  readonly parentActivationId: number | null;
   readonly phase: FramePhase;
   readonly input: Value;
   readonly local: Readonly<Record<string, Value>>;
