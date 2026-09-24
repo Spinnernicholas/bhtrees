@@ -1,0 +1,10 @@
+{
+  "name": "bhtrees",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Dependency-free behavior trees with explicit execution and debugging",
+  "exports": { ".": "./src/index.js" },
+  "files": ["src", "README.md"],
+  "scripts": { "test": "node --test", "example": "node examples/basic.js", "example:browser": "node scripts/serve.js" },
+  "engines": { "node": ">=22" }
+}

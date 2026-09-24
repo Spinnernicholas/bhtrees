@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BHTrees · Browser playground</title>
+<link rel="stylesheet" href="./style.css">
+<script type="module" src="./app.js"></script>
+<header><p class="eyebrow">BHTREES / EXECUTION PLAYGROUND</p><h1>Small agent. Real decisions.</h1>
+<p>Follow a crystal-gathering rover through three expeditions, from radar scan to delivery.</p></header>
+<main>
+  <section aria-label="Execution controls">
+    <div class="toolbar">
+      <button id="start">Start / restart</button><button id="pause">Pause</button>
+      <button id="continue">Continue</button><button id="step">Step</button><button id="cancel">Cancel</button>
+      <strong id="status" role="status">idle</strong>
+    </div>
+    <p>Step advances one engine transition. Timers keep running while paused; continuations stay queued.</p>
+    <div class="inputs"><label>Your name <input id="name" value="Explorer" maxlength="60"></label>
+      <button id="signal">Send radar ping</button>
+      </div>
+  </section>
+  <section aria-label="Game simulation"><div class="tree-toolbar"><h2>Crystal valley</h2><span class="legend">Crystals · Rover · Base</span></div>
+    <div id="world" role="img" aria-label="Rover traveling between its base and three crystal deposits">
+      <span class="base">BASE</span><div id="crystals"></div><span id="agent" aria-label="Rover">●</span>
+    </div><p id="game-status" role="status"></p>
+    <p class="tree-hint">Radar pings accelerate scanning. The agent chooses the nearest deposit, travels, mines, and brings it home. Pause freezes movement; timers still settle into the queue.</p>
+  </section>
+  <div class="columns">
+    <section><div class="tree-toolbar"><h2>Tree</h2><label>View <select id="tree-mode"><option value="blocks">Blocks</option><option value="list">List</option></select></label></div>
+      <p class="tree-hint">Select a node to inspect it. The mint border marks active execution.</p>
+      <ol id="tree" data-view="blocks" aria-label="Behavior tree"></ol><p id="resources"></p></section>
+    <section><h2>Node inspection</h2><pre id="node-inspection"></pre><details><summary>Runner snapshot</summary><pre id="inspection"></pre></details></section>
+  </div>
+  <section><h2>Event history <small>Latest 100 entries</small></h2><ol id="history"></ol></section>
+  <p class="note">This example uses the public runner API. Full debugger breakpoints, recordings, and renderer plugins are still planned.</p>
+</main>
+</html>

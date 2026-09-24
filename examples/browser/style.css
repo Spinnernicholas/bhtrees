@@ -1,0 +1,68 @@
+:root { color-scheme: dark; font: 16px/1.5 system-ui, sans-serif; background: #101824; color: #e4ecf5; }
+body { max-width: 1120px; margin: auto; padding: 36px 24px; }
+h1 { font-size: clamp(2rem, 5vw, 3.5rem); letter-spacing: -.04em; margin: 8px 0; }
+h2 { font-size: 1.05rem; margin-top: 0; }
+p { color: #aebfd1; }
+.eyebrow { color: #67e0b7; letter-spacing: .15em; font-size: .75rem; }
+section { background: #192536; border: 1px solid #314158; border-radius: 14px; padding: 22px; margin-top: 20px; }
+.toolbar, .inputs { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+button, input { font: inherit; }
+button { border: 1px solid #52677f; border-radius: 7px; padding: 8px 14px; color: inherit; background: #25374d; cursor: pointer; }
+button:first-child { background: #67e0b7; color: #10271e; border-color: #67e0b7; }
+button:disabled { opacity: .4; cursor: default; }
+button:focus-visible, input:focus-visible { outline: 3px solid #ffda83; outline-offset: 3px; }
+input[type=text], input:not([type]) { background: #101824; border: 1px solid #52677f; color: inherit; padding: 8px; border-radius: 6px; width: 150px; }
+#status { margin-left: auto; color: #67e0b7; }
+.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.columns > section { min-width: 0; }
+.tree-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.tree-toolbar h2 { margin: 0; }
+.tree-toolbar label { font-size: .8rem; color: #aebfd1; }
+select { font: inherit; color: #e4ecf5; background: #25374d; border: 1px solid #52677f; border-radius: 7px; padding: 7px 10px; margin-left: 6px; }
+select:focus-visible, summary:focus-visible { outline: 3px solid #ffda83; outline-offset: 3px; }
+.tree-hint { font-size: .8rem; }
+#tree, .node-children { list-style: none; padding: 0; }
+.tree-node { --edge: #52677f; position: relative; background: #142031; border: 1px solid var(--edge); border-radius: 10px; margin: 14px 0; }
+.tree-node.active { --edge: #67e0b7; }
+.tree-node.selected > .node-header { background: #25374d; }
+.node-header, .node-header:first-child { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; width: 100%; background: transparent; color: #e4ecf5; border: 0; border-radius: 9px 9px 0 0; text-align: left; padding: 12px; }
+.node-header:hover { background: #25374d; }
+.node-title { display: grid; gap: 3px; min-width: 0; }
+.node-kind { color: #aebfd1; text-transform: uppercase; font-size: .65rem; letter-spacing: .12em; }
+.node-label { font-size: .9rem; overflow-wrap: anywhere; }
+.node-status { flex-shrink: 0; color: #aebfd1; font-size: .7rem; border: 1px solid #314158; border-radius: 5px; padding: 3px 6px; }
+.active > .node-header .node-status { color: #67e0b7; border-color: #426b65; }
+.node-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; font: .7rem/1.6 ui-monospace, monospace; color: #aebfd1; padding: 0 12px 12px; overflow-wrap: anywhere; }
+.node-port { color: #b5d5e8; }
+.node-children { margin: 0 12px 0 18px; padding: 3px 0 3px 14px; border-left: 1px solid #314158; }
+.node-end { color: #aebfd1; font-size: .65rem; padding: 6px 12px 10px; }
+/* The composite's open cavity and connector tabs suggest snapped-together blocks. */
+[data-view=blocks] > .sequence { border-left-width: 5px; }
+[data-view=blocks] .node-children { background: #101824; border-radius: 7px 0 0 7px; margin-right: -1px; padding: 8px 12px 8px 14px; border: 1px solid #314158; border-right: 0; }
+[data-view=blocks] .node-children > .tree-node::before { content: ''; position: absolute; top: -1px; left: 18px; width: 28px; height: 6px; background: #101824; border: 1px solid var(--edge); border-top: 0; border-radius: 0 0 4px 4px; }
+[data-view=blocks] .node-children > .tree-node::after { content: ''; position: absolute; bottom: -7px; left: 18px; width: 28px; height: 6px; background: #142031; border: 1px solid var(--edge); border-top: 0; border-radius: 0 0 4px 4px; }
+[data-view=list] .tree-node { border: 0; border-left: 3px solid var(--edge); border-radius: 0; }
+[data-view=list] .node-end { display: none; }
+summary { cursor: pointer; color: #aebfd1; font-size: .85rem; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85rem; }
+#history { max-height: 250px; overflow-y: auto; padding-left: 24px; font: .85rem/1.8 ui-monospace, monospace; }
+small, .note { color: #aebfd1; font-size: .8rem; font-weight: normal; }
+@media (max-width: 700px) { .columns { grid-template-columns: 1fr; gap: 0; } body { padding: 20px 14px; } }
+
+/* Sibling connectors meet at a shared seam, without card spacing. */
+[data-view=blocks] .node-children > .tree-node { margin: 0; border-radius: 0; }
+[data-view=blocks] .node-children > .tree-node + .tree-node { margin-top: -1px; }
+[data-view=blocks] .node-children > .tree-node:first-child { border-radius: 7px 7px 0 0; }
+[data-view=blocks] .node-children > .tree-node:last-child { border-radius: 0 0 7px 7px; }
+[data-view=blocks] .node-children > .tree-node::before { display: none; }
+[data-view=blocks] .node-children > .tree-node::after { z-index: 2; pointer-events: none; }
+[data-view=blocks] .node-children > .tree-node:last-child::after { display: none; }
+[data-view=blocks] .node-header { border-radius: 0; padding-top: 16px; }
+.legend { font-size: .8rem; color: #aebfd1; }
+#world { position: relative; height: 260px; margin-top: 18px; border: 1px solid #314158; border-radius: 10px; overflow: hidden; background-color: #101824; background-image: linear-gradient(#25374d66 1px, transparent 1px), linear-gradient(90deg, #25374d66 1px, transparent 1px); background-size: 32px 32px; }
+.base, .crystal, #agent { position: absolute; transform: translate(-50%, -50%); }
+.base { left: 12%; top: 50%; border: 2px solid #52677f; border-radius: 8px; padding: 18px 9px; color: #aebfd1; font-size: .7rem; background: #192536; }
+.crystal { width: 28px; height: 28px; display: grid; place-items: center; background: #25374d; border: 2px solid #a0bfef; color: #d8e7ff; border-radius: 3px 12px; font-size: .75rem; }
+.crystal[hidden] { display: none; }
+#agent { left: 12%; top: 50%; color: #67e0b7; font-size: 25px; text-shadow: 0 0 15px #67e0b780; }
+#tree { max-height: 740px; overflow: auto; padding: 2px; }
