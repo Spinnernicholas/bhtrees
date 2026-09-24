@@ -1,4 +1,4 @@
-import { action, sequence, createRunner, SUCCESS, RUNNING } from 'bhtrees';
+import { action, sequence, selector, condition, createRunner, SUCCESS, RUNNING } from 'bhtrees';
 import type { ActionContext, Clock, NodeDefinition, RunnerSnapshot, WaitDescriptor } from 'bhtrees';
 
 const clock: Clock = { setTimeout: () => ({ id: 1 }), clearTimeout: handle => { void handle; } };
@@ -40,3 +40,20 @@ function invalidWait(ctx: ActionContext) {
   ctx.wait.timer('soon');
 }
 void invalidWait;
+
+const priority: NodeDefinition = selector({ id: 'priority', reactive: true, steps: [
+  { node: condition({ id: 'ready', test: ctx => ctx.input.ready === true }) },
+  { node: tree, save: 'fallback' }
+], output: scope => scope.last });
+createRunner(priority);
+// @ts-expect-error Conditions must return boolean values synchronously.
+condition({ id: 'async', test: async () => true });
+// @ts-expect-error Conditions cannot return behavior statuses.
+condition({ id: 'status', test: () => SUCCESS });
+condition({ id: 'no-wait', test: ctx => {
+  // @ts-expect-error Conditions cannot register waits.
+  ctx.wait.timer(1);
+  return true;
+} });
+// @ts-expect-error Selectors require node definitions in their steps.
+selector({ id: 'invalid-step', steps: [{ node: {} }] });

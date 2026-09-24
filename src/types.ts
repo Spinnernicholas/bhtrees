@@ -57,7 +57,25 @@ export interface SequenceDefinition {
   readonly output: (scope: Scope) => Value;
   readonly reactive: Reactive;
 }
-export type NodeDefinition = ActionDefinition | SequenceDefinition;
+export type ConditionContext = Pick<ActionContext, 'input' | 'local' | 'services'>;
+export interface ConditionOptions {
+  id: string;
+  test: (context: ConditionContext) => boolean;
+  reactive?: Reactive;
+}
+export interface ConditionDefinition {
+  readonly type: 'condition';
+  readonly id: string;
+  readonly test: (context: ConditionContext) => boolean;
+  readonly reactive: Reactive;
+}
+/** Selectors use the same input/save bindings as sequences. */
+export type SelectorStep = SequenceStep;
+export type SelectorOptions = SequenceOptions;
+export interface SelectorDefinition extends Omit<SequenceDefinition, 'type'> {
+  readonly type: 'selector';
+}
+export type NodeDefinition = ActionDefinition | ConditionDefinition | SequenceDefinition | SelectorDefinition;
 /** Timer handles are opaque and owned by the injected host clock. */
 export interface Clock {
   setTimeout(callback: () => void, ms: number): Value;

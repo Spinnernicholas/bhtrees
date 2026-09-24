@@ -58,8 +58,8 @@ renderer plugin API. Node and headless Chrome checks cover its execution control
 connected block geometry, the complete agent mission, restart, and cancellation. To rerun the real
 browser smoke test, build with `npm run build`, then use `node scripts/check-browser.js <path-to-Chrome-or-Edge>`.
 
-Implemented: immutable action/sequence definitions, isolated runner frames, explicit
-inputs/outputs and sequence bindings, local activation state, promise/timer/event/poll waits with named
+Implemented: immutable action/condition/sequence/selector definitions, isolated runner frames, explicit
+inputs/outputs and composite bindings, local activation state, promise/timer/event/poll waits with named
 resume handlers, cancellation, bounded ticks, snapshots, and single-transition stepping.
 
 `tick()` runs until completion, a running action, a wait, or its step budget. Promise settlement only
@@ -84,12 +84,49 @@ evaluated again on a later tick; return `SUCCESS` or `FAILURE` to finish. Use
 Choose either `tick` or `enter` for an action; the existing `enter`/`resume` API remains
 available for asynchronous waits.
 
+## Selectors and conditions
+
+`condition({ id, test })` evaluates `test(ctx)` once per activation. It receives
+`input`, `local`, and `services`; return `true` for `SUCCESS` or `false` for `FAILURE`.
+Non-boolean results (including promises) produce an execution error. Exceptions
+also produce `errored`. Conditions have no wait or resume API.
+
+`selector({ id, steps, output?, reactive? })` tries children in declaration order.
+It skips failures, stops on the first success, and retains a running or waiting
+child. The default is memory behavior; `reactive: true` checks earlier priorities
+again on each logical tick and interrupts displaced work. Reactivity inheritance,
+stepping, budgets, and cleanup follow the same rules as sequences.
+
+Steps accept `input(scope)` and `save`, just like sequence steps. Only successful
+outputs are saved. `scope.last` exposes the previous child's output, including
+failures, so a later input binding can explicitly inspect failure data. On success,
+the selector calls `output(scope)` (default: `scope.last`). If every child fails,
+it returns the last failure output without calling the output mapper. An empty
+selector fails with `undefined` output; an empty sequence succeeds. Exceptions
+stop execution rather than selecting a fallback.
+
+```js
+import { action, condition, selector, sequence, RUNNING } from './dist/index.js';
+
+const priorities = selector({ id: 'priorities', reactive: true, steps: [
+  { node: sequence({ id: 'urgent', steps: [
+    { node: condition({ id: 'needs-help', test: c => c.services.needsHelp() }) },
+    { node: action({ id: 'help', tick: c => c.services.help() }) }
+  ] }) },
+  { node: action({ id: 'patrol', tick: () => RUNNING,
+    cancel: c => c.services.stopPatrol() }) }
+] });
+```
+
+The `help` service returns a behavior result. If `needsHelp()` becomes true while
+patrol is running, the selector switches to the urgent branch and cancels patrol.
+
 ## Reactivity
 
 Every node accepts `reactive: true | false | 'inherited'`. The default is
 `'inherited'`; the root inherits `false`.
 
-- `true`: a sequence starts traversal at its first child on each logical tick.
+- `true`: a sequence or selector starts traversal at its first child on each logical tick.
 - `false`: it resumes from its saved running child.
 - `'inherited'`: it uses its parent's effective setting. An explicit setting overrides it.
 
@@ -100,7 +137,8 @@ parent. Actions have no child traversal to rewind; reactivity does not rerun an
 action's `enter` function. Completed actions are evaluated as fresh activations when
 revisited, so put repeatable guards before running work in reactive sequences.
 
-If an earlier child fails or returns `RUNNING`, any previously running branch that
+If an earlier sequence child fails or returns `RUNNING`, or an earlier selector
+child succeeds or returns `RUNNING`, any previously running branch that
 is no longer reached is halted child-first. Its waits are disposed, queued resumptions
 discarded, and started actions receive `cancel(ctx, 'interrupted')` once. Late
 notifications are ignored. Cleanup failures produce an `errored` runner after the

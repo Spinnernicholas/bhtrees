@@ -1,4 +1,5 @@
-import type { Reactive, ActionOptions, ActionDefinition, SequenceOptions, SequenceDefinition } from './types.js';
+import type { Reactive, ActionOptions, ActionDefinition, SequenceOptions, SequenceDefinition,
+  SelectorOptions, SelectorDefinition, ConditionOptions, ConditionDefinition } from './types.js';
 
 export const SUCCESS = 'SUCCESS';
 export const FAILURE = 'FAILURE';
@@ -29,4 +30,21 @@ export function sequence({ id, steps, output = scope => scope.last, reactive = '
   }
   return Object.freeze({ type: 'sequence', id, output, reactive,
     steps: Object.freeze(steps.map(step => Object.freeze({ ...step }))) });
+}
+
+export function selector({ id, steps, output = scope => scope.last, reactive = 'inherited' }: SelectorOptions): SelectorDefinition {
+  checkReactive(reactive);
+  if (typeof id !== 'string' || !id || !Array.isArray(steps) || typeof output !== 'function') {
+    throw new TypeError('Selectors require an id, steps array, and optional output function');
+  }
+  return Object.freeze({ type: 'selector', id, output, reactive,
+    steps: Object.freeze(steps.map(step => Object.freeze({ ...step }))) });
+}
+
+export function condition({ id, test, reactive = 'inherited' }: ConditionOptions): ConditionDefinition {
+  checkReactive(reactive);
+  if (typeof id !== 'string' || !id || typeof test !== 'function') {
+    throw new TypeError('Conditions require an id and test function');
+  }
+  return Object.freeze({ type: 'condition', id, test, reactive });
 }

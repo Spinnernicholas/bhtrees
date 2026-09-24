@@ -29,7 +29,7 @@ export function mountTreeView({ target, tree, labels = {}, onSelect = () => {} }
     if (definition.steps) {
       const children = element('ol', 'node-children');
       for (const step of definition.steps) children.append(build(step.node, step));
-      row.append(children, element('div', 'node-end', 'end sequence'));
+      row.append(children, element('div', 'node-end', `end ${definition.type}`));
     }
     rows.push({ definition, row, header, status, select });
     return row;
