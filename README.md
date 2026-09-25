@@ -984,6 +984,58 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
+## Node-hosted remote debugger
+
+Build and run `node examples/remote-debugger.js`, then open the private URL printed
+in the terminal. The browser displays the tree, live activation phases and inspection
+data, with pause, continue, step-into, tick and cancel controls. Click a node to inspect
+its definition and all live activations. The example starts paused; Continue lets
+the host scheduler drive execution. Ctrl+C shuts down the example.
+
+```js
+import { createDebugger } from 'bhtrees';
+import { startDebuggerServer } from 'bhtrees/node';
+
+const debug = createDebugger(runner);
+const server = await startDebuggerServer({ client: debug, tree, port: 0 });
+console.log(server.url);
+// Keep driving debug.runner through your host scheduler.
+// Later: await server.close();
+```
+
+This first transport uses built-in Node HTTP, serves the UI itself and binds only
+`127.0.0.1`. Each server generates a random bearer token carried in the initial URL
+fragment; the page removes it from the address bar and keeps it in memory. Treat
+the printed URL as a credential. Reload using the original URL. The server rejects
+foreign Host/Origin headers, requires authentication on state/command endpoints,
+and limits command bodies to 4096 bytes. Network-wide hosting and browser/game
+relay connections are not implemented.
+
+The page polls every 250 ms while idle, retries failed reads and resynchronizes from
+a complete snapshot. It rejects stale responses by revision. Commands are not retried
+automatically because they may already have executed when a connection fails. Polling
+captures current state, not every engine transition; it is not a recording. HTTP
+requests time out after five seconds in the provided browser transport.
+
+For a custom browser UI, `createRemoteDebugger({ url, token })` from `bhtrees/browser`
+provides async `read()` and `command(command)` methods. State responses include
+protocol version 1, capabilities, a definition graph and a descriptive snapshot.
+This async transport is not yet interchangeable with the synchronous local client.
+Closing the server or browser does not cancel the runner or dispose the controller.
+
+Inspection does not invoke ordinary getters or `toJSON`; functions, undefined values,
+cycles/shared references, non-finite numbers and unavailable values have `$debug`
+markers. Values are limited to depth 10, 200 properties/items per container, 2048
+characters per string and 10000 visited values per snapshot. Arrays beyond the limit
+include a truncation marker. These descriptions cannot restore runtime state. Tree
+definitions are capped at 10000 nodes/50000 queued edges, and the UI limits nesting
+and displayed occurrences. Shared definitions show all their live activations.
+
+The remote UI currently offers the local controller's implemented controls. Breakpoints,
+step-over/out, watchpoints, history/profiling, multiple runners and reusable list/block
+renderer components remain pending. HTTP tests cover controls and access checks; a
+Chrome smoke test verifies the served UI connects and displays the runtime.
+
 ## Local debugger controller
 
 ```js
@@ -1023,8 +1075,8 @@ runner or its scheduler; the wrapper remains usable for execution. Host owners m
 release those resources separately. The browser playground now uses this client for
 execution controls and rendering notifications.
 
-Step-over/out, breakpoints, watchpoints, recordings, checkpoints, remote transport,
-and reusable debugger renderers remain pending.
+Step-over/out, breakpoints, watchpoints, recordings, checkpoints, and reusable
+debugger renderers remain pending. The Node HTTP transport is described above.
 
 ## Standalone global build
 

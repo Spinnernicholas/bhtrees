@@ -7,6 +7,11 @@ import { encodeConfig, decodeConfig, toConfigDocument, fromConfigDocument, resol
 import type { Configuration, ExtensionDeclaration, ResolvedExtension, ConfiguredTree, ConfigFileContent, TreeSerializationOptions } from 'bhtrees';
 import { createExtensionLoader } from 'bhtrees';
 import type { ExtensionManifest } from 'bhtrees';
+import { startDebuggerServer } from 'bhtrees/node';
+import { createRemoteDebugger } from 'bhtrees/browser';
+const remoteClient = createRemoteDebugger({ url: 'http://127.0.0.1:1234/', token: 'host-provided' });
+void remoteClient.command({ type: 'pause' });
+void startDebuggerServer;
 import { createDebugger } from 'bhtrees';
 import type { DebugSnapshot, DebugCommandResult } from 'bhtrees';
 const debugClient = createDebugger(createRunner(action({ id: 'debug', tick: () => RUNNING })));

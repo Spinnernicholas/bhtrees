@@ -534,6 +534,13 @@ Run browser and Adventure Land smoke examples in their real host environments.
   remain pending; transition instrumentation is the next controller task.
 - Add bounded recording, historical snapshots, checkpoint capability checks/restore hooks.
 - Implement local and Node remote transports, reconnect, and resynchronization.
+  Implemented the first Node-hosted browser debugger: loopback-only HTTP server,
+  per-server bearer token, origin/host checks, bounded command bodies, definition graph
+  and descriptive value snapshots. A served UI displays the tree/live inspection and
+  supported controls. A stateless async browser client polls/retries reads and refreshes
+  full snapshots; commands are not replayed. HTTP tests and Chrome smoke cover the
+  connection. It does not record every transition or offer remote network/relay hosting;
+  transport/client unification, advanced controls and reusable renderers remain pending.
 
 Gate: controls behave consistently across nested and parallel activations; pause queues
 external completions; history does not execute actions; bounded storage stays bounded;

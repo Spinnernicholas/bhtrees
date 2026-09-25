@@ -1,3 +1,5 @@
+export { createRemoteDebugger } from './debug-remote.js';
+export type { RemoteDebugState, RemoteDebuggerOptions } from './debug-remote.js';
 import { createExtensionLoader } from './extensions.js';
 import type { ExtensionLoader, ExtensionLoaderOptions } from './extensions.js';
 import { loadConfiguredTree } from './config-loader.js';

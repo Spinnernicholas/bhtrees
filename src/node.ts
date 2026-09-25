@@ -1,4 +1,6 @@
 /// <reference types="node" />
+export { startDebuggerServer } from './debug-server.js';
+export type { DebuggerServer, DebuggerServerOptions } from './debug-server.js';
 import { readFile } from 'node:fs/promises';
 import { createRequire, isBuiltin } from 'node:module';
 import { resolve } from 'node:path';
