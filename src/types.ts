@@ -226,6 +226,8 @@ export interface RunnerSnapshot {
   readonly frames: readonly FrameSnapshot[];
 }
 export interface Runner {
+  /** Pause before consuming a ready action continuation by returning true. */
+  beforeResume(listener: (boundary: RunnerResumeBoundary) => boolean | void): () => void;
   /** Observe writes to this runner's injected board. Throws when no board is configured. */
   observeBlackboard(listener: BlackboardListener): () => void;
   /** Return true to pause before the first transition of a new activation. */
@@ -252,4 +254,9 @@ export interface RunnerEntryBoundary {
   readonly nodeId: string;
   readonly activationId: number;
   readonly snapshot: RunnerSnapshot;
+}
+export interface RunnerResumeBoundary extends RunnerEntryBoundary {
+  readonly handler: string | null;
+  readonly value: Value;
+  readonly rejected: boolean;
 }

@@ -63,11 +63,13 @@ test('closing transport is idempotent and leaves controller and runtime alive', 
 test('remote clients install, hit and remove entry breakpoints', async t => {
   const { remote } = await setup(t);
   assert.equal((await remote.command({ type: 'setBreakpoint', nodeId: 'running' })).result.ok, true);
+  assert.equal((await remote.command({ type: 'setBreakpoint', nodeId: 'running', kind: 'resume' })).result.ok, true);
   await remote.command({ type: 'tick' });
   const stopped = await remote.read();
   assert.equal(stopped.snapshot.runner.paused, true);
   assert.equal(stopped.breakpointHit.nodeId, 'running');
-  assert.equal(stopped.breakpoints.length, 1);
+  assert.equal(stopped.breakpoints.length, 2);
+  assert.ok(stopped.breakpoints.some(breakpoint => breakpoint.kind === 'resume'));
   assert.equal(stopped.snapshot.runner.frames.find(frame => frame.nodeId === 'running').phase, 'enter');
   await remote.command({ type: 'stepOver' });
   const stepped = await remote.read();

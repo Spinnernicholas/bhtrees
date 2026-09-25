@@ -29,6 +29,9 @@ const debugResult: DebugCommandResult = debugClient.command({ type: 'select', ac
 debugClient.subscribe((snapshot: DebugSnapshot) => { void snapshot.selection; });
 debugClient.command({ type: 'stepOver' });
 debugClient.command({ type: 'stepOut' });
+debugClient.command({ type: 'setBreakpoint', nodeId: 'debug', kind: 'resume' });
+const offResume = debugClient.runner.beforeResume(boundary => boundary.handler === 'done');
+offResume();
 void debugResult;
 import { loadAdventureLandSession } from 'bhtrees/adventure-land';
 import type { AdventureLandSession } from 'bhtrees/adventure-land';

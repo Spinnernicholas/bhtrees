@@ -1035,11 +1035,11 @@ and displayed occurrences. Shared definitions show all their live activations.
 The remote UI also shows retained execution events with a node-ID text filter and a
 count of older events dropped by the controller. Events are captured in the runtime,
 so several transitions between polls remain visible within the retention limit.
-The remote UI offers entry breakpoints, including input-value conditions, through its
+The remote UI offers entry and resume breakpoints, including input-value conditions, through its
 breakpoint form; clicking a tree node fills in its node ID. The current hit and its
 activation ID appear beside the execution status. Step-over/out controls show why a
 bounded command stopped; activation buttons select a specific shared-node invocation.
-Resume/completion/error
+Completion/error
 breakpoints, historical state/profiling, multiple runners and reusable list/block
 renderer components remain pending. HTTP tests cover controls and access checks; a
 Chrome smoke test verifies the served UI connects and displays the runtime.
@@ -1163,7 +1163,7 @@ Repeated/subtree calls that create new activations can hit again. A pause consum
 no execution transition. Continue or step passes the held entry once, avoiding an
 immediate re-hit. Other new activations can still hit during that drive.
 
-There is one entry breakpoint per node ID, up to 1000. IDs need not currently be active;
+There is one breakpoint per node ID and kind, up to 1000 total. IDs need not currently be active;
 an unknown ID simply never matches. Set replaces an existing condition; remove is
 idempotent. `inputPath` and `equals` must be supplied together. Paths contain up to
 32 string keys and read only own data properties; missing properties/accessors do not
@@ -1183,6 +1183,34 @@ node/activation IDs and a live snapshot; returning `true` requests an entry paus
 Delivery is synchronous and errors use `onEventError`, as with execution observers.
 All listeners see the original boundary; resuming a held entry bypasses entry hooks
 once for that activation. Unsubscribe releases only that registration.
+
+### Resume breakpoints
+
+Set `{ type: 'setBreakpoint', nodeId: 'travel', kind: 'resume' }` to stop before
+consuming a ready action continuation. Entry remains the default kind; both kinds
+can coexist on one node. Removal also accepts `kind` and defaults to entry, so
+removing an entry breakpoint leaves its resume breakpoint intact. The remote form
+provides a kind selector and displays the named handler on resume hits.
+
+The completion remains queued and the activation retains its wait registration
+until Continue or step consumes it. Resuming bypasses the held event once; if the
+continuation installs another wait, its later completion can hit again on the same
+activation. Ready poll results, promises, callback tokens, events, timer waits and
+combined action waits share this boundary. Rejections also stop before rejection
+handler dispatch or unhandled-error processing. Timer decorators themselves are
+not action continuations. Poll predicates may run to discover readiness before a hit.
+
+Optional `inputPath`/`equals` conditions inspect the captured activation input, as
+for entry breakpoints, not the continuation payload. A hit does not increment the
+transition counter. Cancellation still discards the queue, and an expired active
+timeout can win before the held continuation when execution resumes. No external
+operation or timer is frozen by pausing the runner.
+
+`runner.beforeResume(listener)` exposes this boundary directly with node/activation
+IDs, snapshot, handler name (or null), value and rejection flag. Returning true
+requests a pause. Observer errors are isolated through `onEventError`; unsubscribe
+releases the registration. A held event bypasses all resume hooks once when resumed.
+Completion/error breakpoint kinds remain pending.
 
 ## Execution events and bounded timeline
 

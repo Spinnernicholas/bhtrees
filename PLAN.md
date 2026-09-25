@@ -550,7 +550,10 @@ Run browser and Adventure Land smoke examples in their real host environments.
   blackboards and detach without disposing caller-owned data. Advanced steps stop on
   hits. Tests cover external/handler writes, filtering, cleanup and remote commands.
   Full write history and value-comparison watchpoint conditions are not implemented.
-  Resume/completion/error breakpoints remain next.
+  Resume breakpoints now hold ready continuations before queue consumption and handler
+  dispatch. Entry/resume kinds coexist by node, with shared input conditions, remote
+  kind selection and handler inspection. Poll/rejection/repeated-wait/timeout/cancel
+  tests cover held events and single-use bypass. Completion/error kinds remain next.
 - Add bounded recording, historical snapshots, checkpoint capability checks/restore hooks.
 - Implement local and Node remote transports, reconnect, and resynchronization.
   Implemented the first Node-hosted browser debugger: loopback-only HTTP server,

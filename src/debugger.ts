@@ -1,4 +1,4 @@
-import type { Runner, RunnerSnapshot, FrameSnapshot, RunnerEvent, RunnerEntryBoundary, BlackboardChange, BlackboardListener } from './types.js';
+import type { Runner, RunnerSnapshot, FrameSnapshot, RunnerEvent, RunnerEntryBoundary, RunnerResumeBoundary, BlackboardChange, BlackboardListener } from './types.js';
 
 export interface DebugWatchpoint {
   readonly key: string;
@@ -6,6 +6,8 @@ export interface DebugWatchpoint {
 }
 
 export interface EntryBreakpoint {
+  /** Defaults to entry for compatibility. Conditions inspect activation input for both kinds. */
+  readonly kind?: 'entry' | 'resume';
   readonly nodeId: string;
   /** Own data-property path within activation input; omitted means unconditional. */
   readonly inputPath?: readonly string[];
@@ -32,14 +34,14 @@ export interface DebugStepResult {
 }
 export type DebugCommand = { type: 'pause' | 'continue' | 'stepInto' | 'stepOver' | 'stepOut' | 'tick' } |
   { type: 'cancel'; reason?: string } | { type: 'select'; activationId: number | null } |
-  ({ type: 'setBreakpoint' } & EntryBreakpoint) | { type: 'removeBreakpoint'; nodeId: string } |
+  ({ type: 'setBreakpoint' } & EntryBreakpoint) | { type: 'removeBreakpoint'; nodeId: string; kind?: 'entry' | 'resume' } |
   { type: 'setWatchpoint'; key: string; operation?: DebugWatchpoint['operation'] } | { type: 'removeWatchpoint'; key: string };
 export interface DebugSnapshot {
   readonly watchpoints: readonly DebugWatchpoint[];
   readonly watchpointHit: Readonly<BlackboardChange> | null;
   readonly stepResult: DebugStepResult | null;
   readonly breakpoints: readonly EntryBreakpoint[];
-  readonly breakpointHit: { readonly nodeId: string; readonly activationId: number } | null;
+  readonly breakpointHit: { readonly nodeId: string; readonly activationId: number; readonly kind: 'entry' | 'resume'; readonly handler?: string | null } | null;
   readonly events: readonly DebugEventSummary[];
   readonly droppedEvents: number;
   readonly version: 1;
@@ -95,8 +97,9 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
   }) : () => {};
   const listeners = new Set<(snapshot: DebugSnapshot) => void>();
   let disposed = false, busy = false, revision = 0, selected: number | null = null;
-  const unsubscribeEntries = source.beforeEnter(boundary => {
-    const breakpoint = breakpoints.get(boundary.nodeId);
+  const breakpointKey = (nodeId: string, kind: 'entry' | 'resume') => JSON.stringify([kind, nodeId]);
+  function matchBreakpoint(boundary: RunnerEntryBoundary, kind: 'entry' | 'resume', handler?: string | null) {
+    const breakpoint = breakpoints.get(breakpointKey(boundary.nodeId, kind));
     if (!breakpoint) return;
     if (breakpoint.inputPath) {
       let value: unknown = boundary.snapshot.frames.find(frame => frame.activationId === boundary.activationId)?.input;
@@ -108,10 +111,13 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
       }
       if (value !== breakpoint.equals) return;
     }
-    breakpointHit = Object.freeze({ nodeId: boundary.nodeId, activationId: boundary.activationId });
+    breakpointHit = Object.freeze({ nodeId: boundary.nodeId, activationId: boundary.activationId, kind,
+      ...(kind === 'resume' ? { handler: handler ?? null } : {}) });
     selected = boundary.activationId;
     return true;
-  });
+  }
+  const unsubscribeEntries = source.beforeEnter(boundary => matchBreakpoint(boundary, 'entry'));
+  const unsubscribeResumes = source.beforeResume(boundary => matchBreakpoint(boundary, 'resume', boundary.handler));
   function capture(): DebugSnapshot {
     const runner = source.snapshot();
     if (!runner.paused || !runner.frames.some(frame => frame.activationId === breakpointHit?.activationId)) breakpointHit = null;
@@ -144,6 +150,7 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
     } finally { busy = false; }
   }
   const runner: Runner = Object.freeze({
+    beforeResume: (listener: (boundary: RunnerResumeBoundary) => boolean | void) => source.beforeResume(listener),
     observeBlackboard: (listener: BlackboardListener) => source.observeBlackboard(listener),
     beforeEnter: (listener: (boundary: RunnerEntryBoundary) => boolean | void) => source.beforeEnter(listener),
     subscribe: (listener: (event: RunnerEvent) => void) => source.subscribe(listener),
@@ -205,11 +212,12 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
         const type = fields.type?.value;
         if (typeof type !== 'string' || !['pause', 'continue', 'stepInto', 'stepOver', 'stepOut', 'tick', 'cancel', 'select', 'setBreakpoint', 'removeBreakpoint', 'setWatchpoint', 'removeWatchpoint'].includes(type)) return failure('INVALID_COMMAND', 'Unknown command type');
         const allowed = type === 'cancel' ? ['type', 'reason'] : type === 'select' ? ['type', 'activationId'] :
-          type === 'setBreakpoint' ? ['type', 'nodeId', 'inputPath', 'equals'] : type === 'removeBreakpoint' ? ['type', 'nodeId'] :
+          type === 'setBreakpoint' ? ['type', 'nodeId', 'kind', 'inputPath', 'equals'] : type === 'removeBreakpoint' ? ['type', 'nodeId', 'kind'] :
           type === 'setWatchpoint' ? ['type', 'key', 'operation'] : type === 'removeWatchpoint' ? ['type', 'key'] : ['type'];
         if (Object.keys(fields).some(key => !allowed.includes(key))) return failure('INVALID_COMMAND', 'Unknown command field');
         const reason = fields.reason?.value, activationId = fields.activationId?.value;
         const nodeId = fields.nodeId?.value, inputPath = fields.inputPath?.value, equals = fields.equals?.value;
+        const kind = fields.kind?.value === undefined ? 'entry' : fields.kind.value;
         const key = fields.key?.value, operation = fields.operation?.value === undefined ? 'any' : fields.operation.value;
         if (type === 'setWatchpoint' || type === 'removeWatchpoint') {
           if (typeof key !== 'string' || key.length > 1024) return failure('INVALID_COMMAND', 'Expected a blackboard key of at most 1024 characters');
@@ -221,9 +229,10 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
         }
         let breakpoint: EntryBreakpoint | undefined;
         if (type === 'setBreakpoint' || type === 'removeBreakpoint') {
+          if (kind !== 'entry' && kind !== 'resume') return failure('INVALID_COMMAND', 'Expected entry or resume breakpoint kind');
           if (typeof nodeId !== 'string' || !nodeId.trim() || nodeId.length > 1024) return failure('INVALID_COMMAND', 'Expected a node ID of 1–1024 characters');
           if (type === 'setBreakpoint') {
-            if (!breakpoints.has(nodeId) && breakpoints.size >= 1000) return failure('INVALID_STATE', 'Breakpoint limit reached');
+            if (!breakpoints.has(breakpointKey(nodeId, kind)) && breakpoints.size >= 1000) return failure('INVALID_STATE', 'Breakpoint limit reached');
             if (('inputPath' in fields) !== ('equals' in fields)) return failure('INVALID_COMMAND', 'Conditional breakpoints require inputPath and equals');
             let path: string[] | undefined;
             if ('inputPath' in fields) {
@@ -239,7 +248,7 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
                 return failure('INVALID_COMMAND', 'Expected a finite JSON scalar comparison value');
               }
             }
-            breakpoint = Object.freeze({ nodeId, ...(path ? { inputPath: Object.freeze(path), equals } : {}) });
+            breakpoint = Object.freeze({ nodeId, kind, ...(path ? { inputPath: Object.freeze(path), equals } : {}) });
           }
         }
         if (type === 'cancel' && reason !== undefined && typeof reason !== 'string') return failure('INVALID_COMMAND', 'Expected a string reason');
@@ -271,8 +280,8 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
             case 'tick': source.tick(); break;
             case 'cancel': source.cancel(reason); break;
             case 'select': selected = activationId; break;
-            case 'setBreakpoint': breakpoints.set(nodeId, breakpoint!); break;
-            case 'removeBreakpoint': breakpoints.delete(nodeId); break;
+            case 'setBreakpoint': breakpoints.set(breakpointKey(nodeId, kind), breakpoint!); break;
+            case 'removeBreakpoint': breakpoints.delete(breakpointKey(nodeId, kind)); break;
             case 'setWatchpoint':
               if (!unsubscribeWrites) unsubscribeWrites = source.observeBlackboard(change => {
                 const watchpoint = watchpoints.get(change.key);
@@ -298,6 +307,6 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
       drive(() => undefined);
       return current;
     },
-    dispose() { disposed = true; listeners.clear(); unsubscribeEvents(); unsubscribeEntries(); unsubscribeWrites?.(); }
+    dispose() { disposed = true; listeners.clear(); unsubscribeEvents(); unsubscribeEntries(); unsubscribeResumes(); unsubscribeWrites?.(); }
   });
 }

@@ -1,6 +1,6 @@
 import { normalizeBinding, evaluateBinding } from './bindings.js';
 import type { Value, NodeDefinition, RunnerOptions, Runner, RunnerStatus, RunnerSnapshot,
-  ActionContext, Scope, ActionResult, Completion, WaitKind, FramePhase, RunnerEvent, RunnerEntryBoundary, BlackboardListener } from './types.js';
+  ActionContext, Scope, ActionResult, Completion, WaitKind, FramePhase, RunnerEvent, RunnerEntryBoundary, RunnerResumeBoundary, BlackboardListener } from './types.js';
 
 interface WaitToken {
   settled: boolean;
@@ -36,6 +36,7 @@ interface Frame {
   timerStarted?: boolean;
 }
 interface ResumeEvent {
+  resumePaused?: boolean;
   frame: Frame;
   token: WaitToken;
   handler: string | undefined;
@@ -82,6 +83,8 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
   let notifying = false, eventSequence = 0;
   const eventListeners = new Set<(event: RunnerEvent) => void>();
   const entryListeners = new Set<(boundary: RunnerEntryBoundary) => boolean | void>();
+  const resumeListeners = new Set<(boundary: RunnerResumeBoundary) => boolean | void>();
+  let boundaryPaused = false;
   let tickNumber = 0;
   let driveNumber = 0;
   let transitionNumber = 0;
@@ -302,8 +305,19 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
         frame.wait!.poll!();
       }
       const eventIndex = queue.findIndex(event => event.frame === frame && event.token === frame.wait);
-      const event = eventIndex < 0 ? undefined : queue.splice(eventIndex, 1)[0];
+      const event = eventIndex < 0 ? undefined : queue[eventIndex];
       if (!event) return false;
+      if (!event.resumePaused && resumeListeners.size) {
+        const boundary = Object.freeze({ nodeId: frame.node.id, activationId: frame.activationId,
+          handler: event.handler ?? null, value: event.value, rejected: event.rejected, snapshot: snapshot() });
+        let stop = false;
+        for (const listener of [...resumeListeners]) if (resumeListeners.has(listener)) {
+          try { if (listener(boundary) === true) stop = true; }
+          catch (error) { try { onEventError?.(error); } catch { /* Isolate observer failures. */ } }
+        }
+        if (stop) { event.resumePaused = true; paused = true; boundaryPaused = true; return false; }
+      }
+      queue.splice(eventIndex, 1);
       release(frame);
       const handler = event.handler !== undefined && Object.hasOwn(frame.node.resume, event.handler) ? frame.node.resume[event.handler] : undefined;
       if (typeof handler !== 'function') {
@@ -490,6 +504,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
     if (executing || notifying) throw new Error('Runner execution is not reentrant');
     if (paused && !manual) return snapshot();
     executing = true;
+    boundaryPaused = false;
     driveNumber++;
     if (!manual) tickNumber++;
     let boundary: { nodeId: string; activationId: number | null; phase: FramePhase | null } | undefined;
@@ -529,6 +544,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
           frame.entered = true;
         }
         const advanced = transition();
+        if (boundaryPaused) break;
         if (!advanced || yielded) {
           if (status === RUNNING && suspendParallelBranch()) {
             yielded = false;
@@ -559,6 +575,12 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
   }
 
   return Object.freeze({
+    beforeResume(listener: (boundary: RunnerResumeBoundary) => boolean | void) {
+      if (typeof listener !== 'function') throw new TypeError('Expected a resume boundary listener');
+      const registration = (boundary: RunnerResumeBoundary) => listener(boundary);
+      resumeListeners.add(registration);
+      return () => { resumeListeners.delete(registration); };
+    },
     observeBlackboard(listener: BlackboardListener) {
       if (!blackboard) throw new Error('Runner has no blackboard');
       if (typeof listener !== 'function') throw new TypeError('Expected a blackboard listener');
