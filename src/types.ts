@@ -226,6 +226,8 @@ export interface RunnerSnapshot {
   readonly frames: readonly FrameSnapshot[];
 }
 export interface Runner {
+  /** Return true to pause before the first transition of a new activation. */
+  beforeEnter(listener: (boundary: RunnerEntryBoundary) => boolean | void): () => void;
   /** No initial event. Delivery is synchronous at completed engine boundaries. */
   subscribe(listener: (event: RunnerEvent) => void): () => void;
   tick(): RunnerSnapshot;
@@ -242,5 +244,10 @@ export interface RunnerEvent {
   readonly activationId: number | null;
   readonly phase: FramePhase | null;
   readonly reason?: string;
+  readonly snapshot: RunnerSnapshot;
+}
+export interface RunnerEntryBoundary {
+  readonly nodeId: string;
+  readonly activationId: number;
   readonly snapshot: RunnerSnapshot;
 }

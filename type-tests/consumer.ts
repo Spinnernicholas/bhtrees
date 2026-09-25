@@ -15,6 +15,9 @@ void startDebuggerServer;
 import { createDebugger } from 'bhtrees';
 import type { DebugSnapshot, DebugCommandResult } from 'bhtrees';
 const debugClient = createDebugger(createRunner(action({ id: 'debug', tick: () => RUNNING })));
+debugClient.command({ type: 'setBreakpoint', nodeId: 'debug', inputPath: ['mode'], equals: 'combat' });
+const offEntry = debugClient.runner.beforeEnter(boundary => boundary.nodeId === 'debug');
+offEntry();
 const offExecutionEvents = debugClient.runner.subscribe(event => {
   const kind: 'transition' | 'error' | 'cancel' = event.type;
   void kind; void event.snapshot.transitions;

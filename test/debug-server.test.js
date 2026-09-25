@@ -59,6 +59,20 @@ test('closing transport is idempotent and leaves controller and runtime alive', 
   await assert.rejects(remote.read());
 });
 
+test('remote clients install, hit and remove entry breakpoints', async t => {
+  const { remote } = await setup(t);
+  assert.equal((await remote.command({ type: 'setBreakpoint', nodeId: 'running' })).result.ok, true);
+  await remote.command({ type: 'tick' });
+  const stopped = await remote.read();
+  assert.equal(stopped.snapshot.runner.paused, true);
+  assert.equal(stopped.breakpointHit.nodeId, 'running');
+  assert.equal(stopped.breakpoints.length, 1);
+  assert.equal(stopped.snapshot.runner.frames.find(frame => frame.nodeId === 'running').phase, 'enter');
+  await remote.command({ type: 'removeBreakpoint', nodeId: 'running' });
+  await remote.command({ type: 'continue' }); await remote.command({ type: 'tick' });
+  assert.equal((await remote.read()).breakpointHit, null);
+});
+
 test('inspection safely describes cycles, errors, functions, accessors and bounded values', () => {
   const value = { error: new Error('boom'), fn() {}, bigint: 12n, text: 'x'.repeat(3000), get accessor() { assert.fail('getter'); } };
   value.self = value;

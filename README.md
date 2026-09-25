@@ -1035,8 +1035,10 @@ and displayed occurrences. Shared definitions show all their live activations.
 The remote UI also shows retained execution events with a node-ID text filter and a
 count of older events dropped by the controller. Events are captured in the runtime,
 so several transitions between polls remain visible within the retention limit.
-The remote UI currently offers the local controller's implemented controls. Breakpoints,
-step-over/out, watchpoints, historical state/profiling, multiple runners and reusable list/block
+The remote UI offers entry breakpoints, including input-value conditions, through its
+breakpoint form; clicking a tree node fills in its node ID. The current hit and its
+activation ID appear beside the execution status. Step-over/out, resume/completion/error
+breakpoints, watchpoints, historical state/profiling, multiple runners and reusable list/block
 renderer components remain pending. HTTP tests cover controls and access checks; a
 Chrome smoke test verifies the served UI connects and displays the runtime.
 
@@ -1079,8 +1081,45 @@ runner or its scheduler; the wrapper remains usable for execution. Host owners m
 release those resources separately. The browser playground now uses this client for
 execution controls and rendering notifications.
 
-Step-over/out, breakpoints, watchpoints, recordings, checkpoints, and reusable
+Step-over/out, additional breakpoint kinds, watchpoints, recordings, checkpoints, and reusable
 debugger renderers remain pending. The Node HTTP transport is described above.
+
+### Entry breakpoints
+
+```js
+debug.command({ type: 'setBreakpoint', nodeId: 'attack' });
+// Replace it with a conditional breakpoint on captured activation input:
+debug.command({ type: 'setBreakpoint', nodeId: 'attack', inputPath: ['mode'], equals: 'combat' });
+debug.command({ type: 'removeBreakpoint', nodeId: 'attack' });
+```
+
+Breakpoints stop before the first transition of a new activation, before its handler
+runs. The initial root allocation still occurs. They do not stop on every tick of a
+retained RUNNING activation or every reevaluation of a retained reactive frame.
+Repeated/subtree calls that create new activations can hit again. A pause consumes
+no execution transition. Continue or step passes the held entry once, avoiding an
+immediate re-hit. Other new activations can still hit during that drive.
+
+There is one entry breakpoint per node ID, up to 1000. IDs need not currently be active;
+an unknown ID simply never matches. Set replaces an existing condition; remove is
+idempotent. `inputPath` and `equals` must be supplied together. Paths contain up to
+32 string keys and read only own data properties; missing properties/accessors do not
+match. Empty paths compare the whole input. Comparison uses strict equality against
+a finite JSON scalar, without coercion, expressions or function evaluation. IDs,
+path keys and comparison strings are bounded to 1024, 256 and 2048 characters.
+
+Snapshots expose `breakpoints` and `breakpointHit`; a hit selects the stopped activation.
+Continuing clears the hit display, and stepping may replace it with a later hit.
+Removing a breakpoint does not resume execution. Disposing the debugger removes its
+entry hooks but leaves the runner's paused state intact. These breakpoints are local
+controller state and are not yet exported in tree/config documents or recorded as
+historical breakpoint-hit events.
+
+Hosts can also use `runner.beforeEnter(listener)` directly. The listener receives
+node/activation IDs and a live snapshot; returning `true` requests an entry pause.
+Delivery is synchronous and errors use `onEventError`, as with execution observers.
+All listeners see the original boundary; resuming a held entry bypasses entry hooks
+once for that activation. Unsubscribe releases only that registration.
 
 ## Execution events and bounded timeline
 

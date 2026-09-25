@@ -1,7 +1,9 @@
-import type { DebugCommand, DebugEventSummary } from './debugger.js';
+import type { DebugCommand, DebugEventSummary, EntryBreakpoint, DebugSnapshot } from './debugger.js';
 import type { DebugValue } from './debug-wire.js';
 
 export interface RemoteDebugState {
+  breakpoints: readonly EntryBreakpoint[];
+  breakpointHit: DebugSnapshot['breakpointHit'];
   events: readonly DebugEventSummary[];
   droppedEvents: number;
   version: 1;

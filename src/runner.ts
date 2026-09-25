@@ -1,6 +1,6 @@
 import { normalizeBinding, evaluateBinding } from './bindings.js';
 import type { Value, NodeDefinition, RunnerOptions, Runner, RunnerStatus, RunnerSnapshot,
-  ActionContext, Scope, ActionResult, Completion, WaitKind, FramePhase, RunnerEvent } from './types.js';
+  ActionContext, Scope, ActionResult, Completion, WaitKind, FramePhase, RunnerEvent, RunnerEntryBoundary } from './types.js';
 
 interface WaitToken {
   settled: boolean;
@@ -11,6 +11,8 @@ interface WaitToken {
 }
 interface TimerRegistration { ready: boolean; dispose(): void }
 interface Frame {
+  entered?: boolean;
+  entryPaused?: boolean;
   node: NodeDefinition;
   activationId: number;
   parentActivationId: number | null;
@@ -79,6 +81,7 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
   let executing = false;
   let notifying = false, eventSequence = 0;
   const eventListeners = new Set<(event: RunnerEvent) => void>();
+  const entryListeners = new Set<(boundary: RunnerEntryBoundary) => boolean | void>();
   let tickNumber = 0;
   let driveNumber = 0;
   let transitionNumber = 0;
@@ -513,6 +516,18 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
       for (let count = 0; count < budget; count++) {
         const frame = stack.find(frame => frame.node.type === 'timeout' && frame.timer?.ready && frame.phase !== 'childResult') ?? stack.at(-1);
         boundary = eventListeners.size ? { nodeId: frame?.node.id ?? root.id, activationId: frame?.activationId ?? null, phase: frame?.phase ?? null } : undefined;
+        if (frame && !frame.entered) {
+          if (!frame.entryPaused && entryListeners.size) {
+            const entry = Object.freeze({ nodeId: frame.node.id, activationId: frame.activationId, snapshot: snapshot() });
+            let stop = false;
+            for (const listener of [...entryListeners]) if (entryListeners.has(listener)) {
+              try { if (listener(entry) === true) stop = true; }
+              catch (error) { try { onEventError?.(error); } catch { /* Isolate observer failures. */ } }
+            }
+            if (stop) { frame.entryPaused = true; paused = true; break; }
+          }
+          frame.entered = true;
+        }
         const advanced = transition();
         if (!advanced || yielded) {
           if (status === RUNNING && suspendParallelBranch()) {
@@ -544,6 +559,12 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
   }
 
   return Object.freeze({
+    beforeEnter(listener: (boundary: RunnerEntryBoundary) => boolean | void) {
+      if (typeof listener !== 'function') throw new TypeError('Expected an entry boundary listener');
+      const registration = (boundary: RunnerEntryBoundary) => listener(boundary);
+      entryListeners.add(registration);
+      return () => { entryListeners.delete(registration); };
+    },
     subscribe(listener: (event: RunnerEvent) => void) {
       if (typeof listener !== 'function') throw new TypeError('Expected an execution event listener');
       const registration = (event: RunnerEvent) => listener(event);

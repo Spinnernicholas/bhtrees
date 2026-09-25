@@ -536,7 +536,12 @@ Run browser and Adventure Land smoke examples in their real host environments.
   The controller retains bounded immutable metadata (default 200) and reports drops;
   the remote UI shows a node-filtered timeline. No state recording or internal
   cancellation trace is claimed. Deterministic tests cover parallel/timeout attribution,
-  pause/reentry, failures, retention and disposal. Breakpoint semantics are next.
+  pause/reentry, failures, retention and disposal. Entry breakpoints now pause before
+  a new activation's first transition, with optional own-data input-path/scalar
+  conditions. Continue/step passes a held boundary once; shared/repeated activations
+  hit independently. Validated set/remove commands, hit inspection and remote form
+  controls are implemented and tested. Unknown node IDs are allowed for later matching.
+  Resume/completion/error breakpoints and step-over/out remain next.
 - Add bounded recording, historical snapshots, checkpoint capability checks/restore hooks.
 - Implement local and Node remote transports, reconnect, and resynchronization.
   Implemented the first Node-hosted browser debugger: loopback-only HTTP server,

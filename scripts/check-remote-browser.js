@@ -9,6 +9,7 @@ const executable = process.argv[2];
 if (!executable) throw Error('Usage: node scripts/check-remote-browser.js <Chrome executable>');
 const tree = action({ id: 'remote-smoke-node', tick: () => 'RUNNING' });
 const debug = createDebugger(createRunner(tree));
+debug.command({ type: 'setBreakpoint', nodeId: tree.id });
 debug.runner.tick();
 const server = await startDebuggerServer({ client: debug, tree });
 const profile = await mkdtemp(join(tmpdir(), 'bhtrees-remote-'));
@@ -21,7 +22,7 @@ try {
   const timer = setTimeout(() => child.kill(), 20000);
   try {
     await new Promise((resolve, reject) => { child.on('error', reject); child.on('close', resolve); });
-    if (!output.includes('data-connected="true"') || !output.includes('remote-smoke-node') || !output.includes('data-command="stepInto"') || !output.includes('transition 1')) {
+    if (!output.includes('data-connected="true"') || !output.includes('remote-smoke-node') || !output.includes('data-command="stepInto"') || !output.includes('transition 1') || !output.includes('entry breakpoint: remote-smoke-node')) {
       throw Error(`Remote browser smoke failed:\n${output}\n${errors.slice(-1500)}`);
     }
     console.log('Remote browser smoke passed: authenticated connection, tree, live state, controls and event timeline.');

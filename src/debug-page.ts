@@ -4,6 +4,11 @@ export const debugPage = `<!doctype html>
 <style>body{font:16px system-ui;margin:2rem;background:#15202b;color:#eee}button{margin:.25rem;padding:.5rem}main{display:grid;grid-template-columns:1fr 1fr;gap:2rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}li{margin:.5rem 0}button.active{border:2px solid #5fd}#connection{color:#5fd}@media(max-width:700px){main{display:block}}</style>
 <h1>BHTrees remote debugger</h1><p id="connection" role="status">Connecting…</p>
 <nav aria-label="Execution controls" id="controls"></nav><p id="status"></p>
+<section><h2>Entry breakpoints</h2><form id="breakpoint-form">
+<label>Node ID <input id="breakpoint-node" required maxlength="1024"></label>
+<label>Input path (JSON array, optional) <input id="breakpoint-path" placeholder='["mode"]'></label>
+<label>Equals (JSON scalar) <input id="breakpoint-value" placeholder='"combat"'></label>
+<button>Set breakpoint</button></form><ul id="breakpoints"></ul></section>
 <main><section><h2>Tree</h2><ul id="tree"></ul></section><section><h2>Inspection</h2><pre id="inspection"></pre></section></main>
 <section><h2>Execution events</h2><label>Filter by node <input id="event-filter"></label><p id="event-count"></p><pre id="events"></pre></section>
 <script type="module" src="/view.js"></script></html>`;
@@ -15,6 +20,14 @@ const client = createRemoteDebugger({ url: location.href, token });
 const byId = id => document.getElementById(id);
 let stopped = false, busy = false, selected = null, timer, lastRevision = -1;
 const names = { pause: 'Pause', continue: 'Continue', stepInto: 'Step into', tick: 'Tick', cancel: 'Cancel' };
+byId('breakpoint-form').onsubmit = event => {
+  event.preventDefault();
+  try {
+    const path = byId('breakpoint-path').value.trim();
+    command({ type: 'setBreakpoint', nodeId: byId('breakpoint-node').value,
+      ...(path ? { inputPath: JSON.parse(path), equals: JSON.parse(byId('breakpoint-value').value) } : {}) });
+  } catch (error) { byId('connection').textContent = error.message; }
+};
 async function command(command) {
   if (busy) return;
   busy = true;
@@ -31,6 +44,15 @@ function render(state) {
   lastRevision = snapshot.revision;
   byId('connection').textContent = 'Connected';
   byId('status').textContent = runner.status + (runner.paused ? ' · paused' : '') + ' · revision ' + snapshot.revision;
+  if (state.breakpointHit) byId('status').textContent += ' · entry breakpoint: ' + state.breakpointHit.nodeId + ' [' + state.breakpointHit.activationId + ']';
+  byId('breakpoints').replaceChildren();
+  for (const breakpoint of state.breakpoints) {
+    const item = document.createElement('li');
+    item.append(document.createTextNode(breakpoint.nodeId + (breakpoint.inputPath ? ' input ' + JSON.stringify(breakpoint.inputPath) + ' equals ' + JSON.stringify(breakpoint.equals) : ' (unconditional)')));
+    const remove = document.createElement('button'); remove.textContent = 'Remove';
+    remove.onclick = () => command({ type: 'removeBreakpoint', nodeId: breakpoint.nodeId });
+    item.append(remove); byId('breakpoints').append(item);
+  }
   byId('controls').replaceChildren();
   for (const [type, label] of Object.entries(names)) {
     if (!state.capabilities.includes(type)) continue;
@@ -49,7 +71,7 @@ function render(state) {
     const frames = live.filter(frame => frame.nodeId === id);
     const button = document.createElement('button'); button.textContent = node.id + ' · ' + node.type + ' · ' + (frames.map(f => f.phase).join(', ') || (id === state.definition.root ? runner.status : 'inactive'));
     button.className = frames.length ? 'active' : '';
-    button.onclick = () => { selected = id; render(state); };
+    button.onclick = () => { selected = id; byId('breakpoint-node').value = id; render(state); };
     item.append(button);
     const children = document.createElement('ul');
     for (const child of node.children) { if (count >= 2000) break; children.append(branch(child, new Set([...path, id]), depth + 1)); }
