@@ -526,7 +526,7 @@ Supported settings in this first configuration slice:
 | `runtime.errorPolicy` | `'stop'` | Only `'stop'` is implemented |
 | `blackboard.enabled` | `false` | Boolean |
 | `blackboard.initial` | `{}` | Plain record of portable JSON-shaped data |
-| `extensions` | `[]` | Validated declarations; module loading remains planned |
+| `extensions` | `[]` | Validated declarations; enabled entries require an extension loader |
 
 All settings apply when creating a new runner; live reconfiguration is not
 implemented. `loaded.createRunner()` uses the resolved step budget and creates a
@@ -607,15 +607,84 @@ the declaration array and its options share the 100,000-value / 128-level bound.
 
 `await resolveTreeConfiguration(text, options)` applies the same config-file loading
 and precedence as `loadConfiguredTree`, returning `{ config, provenance }` without
-constructing nodes or executing factories. Structural tree validation still requires
-its implementations in the supplied registry. Use this API to inspect enabled
-extension declarations. `loadConfiguredTree` currently rejects enabled extensions
-before factory calls, since module loading and lifecycle are not implemented; it can
-create runners when all declarations are disabled. Neither API fetches extension
-modules. Names and option schemas will be checked by the future manifest loader.
+constructing nodes or executing factories. Supply `extensionLoader` to defer
+implementation lookup until extensions have registered their nodes; structural
+graph validation still runs first. Configuration inspection does not load modules.
+`loadConfiguredTree` requires an extension loader when any declaration is enabled.
 
 Run `npm run build`, then `node examples/extension-config.js` for source-relative
 path resolution, option merging, disabling, and provenance.
+
+## Extension loading and lifecycle
+
+`createExtensionLoader({ builtins?, catalog?, importModule?, allowModule? })`
+creates a reusable loader. Built-ins map reserved names to manifests; catalog
+entries map names to manifests or absolute module URIs. The host supplies module
+access explicitly, for example `importModule: uri => import(uri)`. There are no
+implicit downloads, package installations, or filesystem imports. The optional
+async `allowModule(uri)` policy must return true, including for cached modules.
+
+```js
+const extensionLoader = createExtensionLoader({
+  catalog: {
+    greeting: {
+      id: 'greeting', version: '1.0.0', apiVersion: 1,
+      setup(api) {
+        api.registerAction('greeting.hello', {
+          tick: ctx => ctx.success(`Hello, ${ctx.input}!`)
+        });
+      }
+    }
+  }
+});
+const loaded = await loadConfiguredTree(treeText, { extensionLoader });
+const runner = loaded.createRunner({ input: 'Scout' });
+runner.tick();
+await loaded.dispose();
+```
+
+Manifests require `id`, nonempty display `version`, `apiVersion: 1`, and `setup`.
+Optional `dependencies` are unique catalog names/manifest IDs without version ranges.
+Named manifests must match their catalog names. Dependencies load automatically if
+not already declared; explicitly disabled dependencies, cycles, missing names and
+duplicate manifest identities fail before setup. Limits are 1,000 extensions
+including dependencies and 128 dependency edges in a path. Setup runs sequentially
+in dependency order, preserving declaration/dependency order where possible.
+
+Options are copied and frozen. A manifest with supplied options must implement
+`validateOptions(options)`, which may be async and throws on invalid data. All
+validators run before any setup. Declarative option schemas are not implemented.
+`setup(api, options)` may be async and can register actions, conditions, node
+factories, value codecs, and services with `registerService(name, value)`.
+`getService(name)` reads previously registered services. Registry registration
+and `onDispose(callback)` are available only during that extension's setup.
+
+Use `api.onDispose(callback)` immediately after acquiring a resource so partial
+setup can be rolled back. Setup may also return `{ dispose() {} }`. Cleanup runs
+in reverse registration/setup order, continues after errors, and runs once per
+load; repeated disposal calls share one promise. Setup failure cleans up earlier
+extensions and registered partial resources. Resources acquired without a disposer
+and arbitrary import-time side effects cannot be rolled back.
+
+Each load clones the host registry, leaving it unchanged on success or failure.
+Module manifests are cached by canonical URI per loader, including concurrent
+loads; failed imports may retry. Setup, services and disposal are isolated per load.
+`ExtensionError` reports declaration ID, resolved location, stage and cause.
+
+`loaded.registry` exposes the session registry for exporting extension-created
+definitions. `loaded.extensionSnapshot()` reports manifest IDs, versions,
+dependencies, locations and ready/disposed status. Extension services are injected
+into configured runners; conflicting caller service names fail. `loaded.dispose()`
+cancels runners created through its factory before disposing extensions, and blocks
+new runner creation. Runners made directly from `loaded.tree` remain caller-owned.
+Completed runners are released from lifecycle tracking. Services and their objects
+are shared among runners within one configured load.
+
+For standalone use, `await extensionLoader.load(declarations, { registry })`
+returns `{ registry, services, snapshot, dispose }`; its caller owns runner cleanup.
+Path declarations must already be absolute, as produced by configuration resolution.
+Native filesystem/package resolvers, renderer/codec extension hooks, remote
+inspection and declarative option schemas remain planned.
 
 ## YAML application profile
 
@@ -916,6 +985,6 @@ previously installed child subscriptions. Snapshots also report `poll`, `any`, o
 `all` as waiting reasons.
 
 Not implemented yet: full YAML syntax beyond the documented profile, debugger
-configuration and extension loading, debugger controller/UI, recordings/checkpoints,
+configuration, native package/filesystem extension adapters, debugger controller/UI, recordings/checkpoints,
 standalone bundles or environment adapters. The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.

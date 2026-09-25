@@ -461,10 +461,15 @@ reactive interruption, parallel results, repeat budgets, and runs without a blac
   derived ID, resolve paths from their declaring source URI before merging, preserve
   deterministic order and per-option provenance, and support disabling inherited
   entries. Duplicate IDs and conflicting sources fail explicitly. Configuration-only
-  inspection avoids factory calls; runner loading rejects enabled declarations until
-  a module loader is available. Tests cover JSON/YAML, relative paths across config
+  inspection avoids factory calls; runner loading requires a supplied extension
+  loader for enabled declarations. Tests cover JSON/YAML, relative paths across config
   sources, identity conflicts, option merging, limits and disabled entries.
-  Next: extension catalogs, module resolution, manifests and setup/disposal lifecycle.
+  Extension catalogs and lifecycle now support reserved built-ins, host-imported
+  modules, cached manifests, dependency ordering, async option validation, isolated
+  registries/services, setup rollback and reverse disposal. Configured tree loading
+  installs extension implementations before binding nodes and cancels managed runners
+  before cleanup. Native host resolvers and declarative option schemas remain pending.
+  Next: host adapters for filesystem/package resolution and scheduling.
   Debugger settings and live reconfiguration await their runtime implementations.
 
 Gate: equivalent JSON/YAML trees and configs yield equivalent canonical documents;

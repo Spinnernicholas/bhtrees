@@ -12,3 +12,5 @@ export { toConfigDocument, fromConfigDocument, encodeConfig, decodeConfig, resol
 export type { Configuration, ExtensionDeclaration, ResolvedExtension, ConfigDocument, ConfigCodecOptions, ConfigSource, ConfigLayer, ResolvedConfiguration } from './config.js';
 export { loadConfiguredTree, resolveTreeConfiguration } from './config-loader.js';
 export type { ConfiguredTree, ConfiguredTreeOptions, ConfiguredRunnerOptions, ConfigFileContent } from './config-loader.js';
+export { createExtensionLoader, ExtensionError } from './extensions.js';
+export type { ExtensionAPI, ExtensionDisposer, ExtensionManifest, ExtensionLoaderOptions, ExtensionLoader, ExtensionSession, ExtensionSnapshot } from './extensions.js';

@@ -19,6 +19,11 @@ export type PortableValue = null | boolean | string | number |
 type RegisteredCodec = ValueCodec<any>;
 const registries = new WeakMap<TreeRegistry, Map<string, RegisteredCodec>>();
 export function attachValueRegistry(registry: TreeRegistry) { registries.set(registry, new Map()); }
+export function copyValueRegistry(source: TreeRegistry, target: TreeRegistry) {
+  const entries = registries.get(source);
+  if (!entries) throw new TypeError('Invalid registry');
+  registries.set(target, new Map(entries));
+}
 export function registerValueType<T>(registry: TreeRegistry, name: string, codec: ValueCodec<T>) {
   if (typeof name !== 'string' || !name) throw new TypeError('Value type names must be nonempty strings');
   if (!codec || !Number.isSafeInteger(codec.version) || codec.version < 1) throw new TypeError('Value codec version must be a positive safe integer');

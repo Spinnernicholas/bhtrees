@@ -5,6 +5,20 @@ import { parseYaml, stringifyYaml, YamlError } from 'bhtrees';
 import type { YamlValue } from 'bhtrees';
 import { encodeConfig, decodeConfig, toConfigDocument, fromConfigDocument, resolveConfiguration, loadConfiguredTree, resolveTreeConfiguration } from 'bhtrees';
 import type { Configuration, ExtensionDeclaration, ResolvedExtension, ConfiguredTree, ConfigFileContent, TreeSerializationOptions } from 'bhtrees';
+import { createExtensionLoader } from 'bhtrees';
+import type { ExtensionManifest } from 'bhtrees';
+const exampleManifest: ExtensionManifest = {
+  id: 'example', version: '1.0.0', apiVersion: 1,
+  setup(api) {
+    api.registerAction('example.run', { tick: () => SUCCESS });
+    api.registerValue('example.date', { version: 1, test: (value): value is Date => value instanceof Date,
+      encode: date => date.toISOString(), decode: data => new Date(String(data)) });
+    api.onDispose(async () => {});
+    return { dispose() {} };
+  }
+};
+const exampleExtensionLoader = createExtensionLoader({ catalog: { example: exampleManifest } });
+void exampleExtensionLoader;
 
 const extension: ExtensionDeclaration = { id: 'combat', path: './combat.js', enabled: false, options: { radius: 5 } };
 const extensionConfig: Configuration = { extensions: [extension, { name: 'metrics' }] };

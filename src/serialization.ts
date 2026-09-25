@@ -3,7 +3,7 @@ import { parseYaml, stringifyYaml } from './yaml.js';
 import { validateConfiguration } from './config.js';
 import type { Configuration } from './config.js';
 export { DocumentError } from './document-error.js';
-import { attachValueRegistry, registerValueType, toPortableValue, fromPortableValue } from './values.js';
+import { attachValueRegistry, copyValueRegistry, registerValueType, toPortableValue, fromPortableValue } from './values.js';
 import type { ValueCodec, PortableValue } from './values.js';
 import * as nodes from './nodes.js';
 import { normalizeBinding } from './bindings.js';
@@ -78,6 +78,18 @@ export function createRegistry(): TreeRegistry {
   factories.set(registry, nodeFactories);
   attachValueRegistry(registry);
   return registry;
+}
+
+/** Internal per-load copy: extension registration never mutates the host registry. */
+export function forkRegistry(source?: TreeRegistry): TreeRegistry {
+  const target = createRegistry();
+  if (source !== undefined) {
+    const entries = registryEntries(source);
+    for (const [name, entry] of entries) registries.get(target)!.set(name, entry);
+    for (const [name, entry] of factories.get(source)!) factories.get(target)!.set(name, entry);
+    copyValueRegistry(source, target);
+  }
+  return target;
 }
 
 export interface TreeStepDocument { node: string; input?: PathBinding; save?: string }
@@ -247,11 +259,11 @@ export function fromTreeDocument(value: unknown, { registry }: SerializationOpti
   return tree;
 }
 
-export function validateTreeDocument(value: unknown, options: SerializationOptions = {}): void {
-  readTreeDocument(value, options, undefined, true);
+export function validateTreeDocument(value: unknown, options: SerializationOptions = {}, deferImplementations = false): void {
+  readTreeDocument(value, options, undefined, true, deferImplementations);
 }
 
-function readTreeDocument(value: unknown, { registry }: SerializationOptions, exported?: Map<string, NodeDefinition>, validateOnly = false): NodeDefinition {
+function readTreeDocument(value: unknown, { registry }: SerializationOptions, exported?: Map<string, NodeDefinition>, validateOnly = false, deferImplementations = false): NodeDefinition {
   const entries = registryEntries(registry);
   const document = record(value, '$');
   fields(document, ['format', 'version', 'kind', 'root', 'nodes', 'config', 'configFile'], '$');
@@ -291,27 +303,34 @@ function readTreeDocument(value: unknown, { registry }: SerializationOptions, ex
       fields(data, [...base, 'implementation', 'implementationVersion', 'data', 'children'], path);
       const name = string(data.implementation, `${path}.implementation`);
       const factory = registry && factories.get(registry)!.get(name);
-      if (!factory) fail(`${path}.implementation`, `Unknown node implementation: ${name}`);
+      if (!factory && !deferImplementations) fail(`${path}.implementation`, `Unknown node implementation: ${name}`);
       const version = data.implementationVersion;
-      if (!Number.isSafeInteger(version) || version < 1 || version > factory.version) fail(`${path}.implementationVersion`, 'Unsupported node implementation version');
-      if (factory.version - version > MAX_DEPTH) fail(`${path}.implementationVersion`, 'Too many migration steps');
-      for (let v = version; v < factory.version; v++) if (!factory.migrations?.[v]) fail(`${path}.implementationVersion`, `Missing migration from version ${v}`);
+      if (!Number.isSafeInteger(version) || version < 1 || (!deferImplementations && version > factory!.version)) fail(`${path}.implementationVersion`, 'Unsupported node implementation version');
+      if (!deferImplementations) {
+        if (factory!.version - version > MAX_DEPTH) fail(`${path}.implementationVersion`, 'Too many migration steps');
+        for (let v = version; v < factory!.version; v++) if (!factory!.migrations?.[v]) fail(`${path}.implementationVersion`, `Missing migration from version ${v}`);
+      }
       if (!Array.isArray(data.children)) fail(`${path}.children`, 'Expected an array');
       const children = data.children.map((child: Value, index: number) => build(string(child, `${path}.children[${index}]`), `${path}.children[${index}]`, depth + 1));
       if (exported) node = exported.get(id)!;
       else if (validateOnly) node = nodes.sequence({ ...common, steps: children.map((node: NodeDefinition) => ({ node })) });
       else {
         let payload = atPath(`${path}.data`, () => fromPortableValue(data.data, { registry }));
-        for (let v = version; v < factory.version; v++) payload = atPath(`${path}.data`, () => factory.migrations![v](payload));
-        node = constructNode(registry!, name, factory, { ...common, data: payload, children }, path);
+        for (let v = version; v < factory!.version; v++) payload = atPath(`${path}.data`, () => factory!.migrations![v](payload));
+        node = constructNode(registry!, name, factory!, { ...common, data: payload, children }, path);
       }
     } else if (type === 'action' || type === 'condition') {
       fields(data, [...base, 'implementation', 'implementationVersion'], path);
       const name = string(data.implementation, `${path}.implementation`), entry = entries.get(name);
-      if (!entry || entry.definition.type !== type) fail(`${path}.implementation`, `Unknown ${type} implementation: ${name}`);
-      if (data.implementationVersion !== entry.version) fail(`${path}.implementationVersion`, `Unsupported implementation version; expected ${entry.version}`);
-      node = entry.definition.type === 'action' ? nodes.action({ ...entry.definition, ...common })
-        : nodes.condition({ ...common, test: entry.definition.test });
+      if (deferImplementations) {
+        if (!Number.isSafeInteger(data.implementationVersion) || data.implementationVersion < 1) fail(`${path}.implementationVersion`, 'Expected a positive implementation version');
+        node = type === 'action' ? nodes.action({ ...common, tick: () => nodes.SUCCESS }) : nodes.condition({ ...common, test: () => true });
+      } else {
+        if (!entry || entry.definition.type !== type) fail(`${path}.implementation`, `Unknown ${type} implementation: ${name}`);
+        if (data.implementationVersion !== entry.version) fail(`${path}.implementationVersion`, `Unsupported implementation version; expected ${entry.version}`);
+        node = entry.definition.type === 'action' ? nodes.action({ ...entry.definition, ...common })
+          : nodes.condition({ ...common, test: entry.definition.test });
+      }
     } else {
       if (!builtinTypes.includes(type)) fail(`${path}.type`, 'Unsupported node type');
       const composite = ['sequence', 'selector', 'parallel'].includes(type);

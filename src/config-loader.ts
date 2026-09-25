@@ -6,6 +6,8 @@ import type { SerializationOptions, TreeDocument } from './serialization.js';
 import { createRunner } from './runner.js';
 import { createBlackboard } from './blackboard.js';
 import type { NodeDefinition, Runner, RunnerOptions } from './types.js';
+import type { ExtensionLoader, ExtensionSession, ExtensionSnapshot } from './extensions.js';
+import type { TreeRegistry } from './serialization.js';
 
 export interface ConfigFileContent { text: string; codec: 'json' | 'yaml' }
 export interface ConfiguredTreeOptions extends SerializationOptions {
@@ -17,10 +19,14 @@ export interface ConfiguredTreeOptions extends SerializationOptions {
   /** Declaring URI for explicit config/overrides; defaults to baseURI. */
   configBaseURI?: string;
   overridesBaseURI?: string;
+  extensionLoader?: ExtensionLoader;
 }
 export type ConfiguredRunnerOptions = Omit<RunnerOptions, 'maxStepsPerTick' | 'blackboard'>;
 export interface ConfiguredTree extends ResolvedConfiguration {
   readonly tree: NodeDefinition;
+  readonly registry?: TreeRegistry;
+  extensionSnapshot(): readonly ExtensionSnapshot[];
+  dispose(): Promise<void>;
   /** Each call creates a separate blackboard when enabled. */
   createRunner(options?: ConfiguredRunnerOptions): Runner;
 }
@@ -31,7 +37,7 @@ async function prepareConfiguredTree(text: string, options: ConfiguredTreeOption
   const { registry, codec, baseURI, readConfig } = options;
   const configBaseURI = options.configBaseURI ?? baseURI, overridesBaseURI = options.overridesBaseURI ?? baseURI;
   const document = parseDocumentText(text, { codec }) as TreeDocument;
-  validateTreeDocument(document, { registry });
+  validateTreeDocument(document, { registry }, !!options.extensionLoader);
   // Snapshot caller-owned layers before awaiting host I/O.
   const explicit = options.config === undefined ? undefined : validateConfiguration(options.config, '$options.config');
   const overrides = options.overrides === undefined ? undefined : validateConfiguration(options.overrides, '$options.overrides');
@@ -65,16 +71,63 @@ export async function resolveTreeConfiguration(text: string, options: Configured
 }
 
 export async function loadConfiguredTree(text: string, options: ConfiguredTreeOptions = {}): Promise<ConfiguredTree> {
+  const extensionLoader = options.extensionLoader;
   const { document, registry, resolved } = await prepareConfiguredTree(text, options);
   const pending = resolved.config.extensions.findIndex(extension => extension.enabled);
-  if (pending >= 0) fail(`$.config.extensions[${pending}]`, 'Enabled extensions require an extension loader; use resolveTreeConfiguration to inspect declarations');
-  const tree = fromTreeDocument(document, { registry });
+  if (pending >= 0 && !extensionLoader) fail(`$.config.extensions[${pending}]`, 'Enabled extensions require an extension loader; use resolveTreeConfiguration to inspect declarations');
+  let session: ExtensionSession | undefined;
+  let tree: NodeDefinition;
+  try {
+    if (extensionLoader) session = await extensionLoader.load(resolved.config.extensions, { registry });
+    tree = fromTreeDocument(document, { registry: session?.registry ?? registry });
+  } catch (error) {
+    try { await session?.dispose(); } catch (cleanup) { throw new AggregateError([error, cleanup], 'Tree loading and extension cleanup failed'); }
+    throw error;
+  }
+  const runners = new Set<Runner>();
+  let disposed = false, disposal: Promise<void> | undefined;
   return Object.freeze({ tree, ...resolved,
+    registry: session?.registry ?? registry,
+    extensionSnapshot: () => session?.snapshot() ?? Object.freeze([]),
+    dispose() {
+      if (!disposal) {
+        disposed = true;
+        disposal = Promise.resolve().then(async () => {
+          const errors: unknown[] = [];
+          for (const runner of runners) {
+            try {
+              const before = runner.snapshot();
+              runner.cancel('configured tree disposed');
+              const after = runner.snapshot();
+              if (after.error !== undefined && after.error !== before.error) errors.push(after.error);
+            } catch (error) { errors.push(error); }
+          }
+          runners.clear();
+          try { await session?.dispose(); } catch (error) { errors.push(error); }
+          if (errors.length) throw new AggregateError(errors, 'Configured tree disposal failed');
+        });
+      }
+      return disposal;
+    },
     createRunner(options: ConfiguredRunnerOptions = {}) {
+      if (disposed) fail('$runner', 'Configured tree is disposed');
       if ('blackboard' in options || 'maxStepsPerTick' in options) fail('$runner', 'Use configuration overrides for blackboard and step budget');
+      const services = Object.assign(Object.create(null), session?.services);
+      for (const [name, value] of Object.entries(options.services ?? {})) {
+        if (Object.hasOwn(services, name)) fail(`$runner.services[${JSON.stringify(name)}]`, 'Service conflicts with an extension service');
+        services[name] = value;
+      }
       const initial = copyConfigValue(resolved.config.blackboard.initial) as Record<string, unknown>;
-      return createRunner(tree, { ...options, maxStepsPerTick: resolved.config.runtime.maxStepsPerTick,
+      const runner = createRunner(tree, { ...options, services, maxStepsPerTick: resolved.config.runtime.maxStepsPerTick,
         ...(resolved.config.blackboard.enabled ? { blackboard: createBlackboard(initial) } : {}) });
+      runners.add(runner);
+      const release = (state: ReturnType<Runner['snapshot']>) => {
+        if (state.status !== 'idle' && state.status !== 'RUNNING') runners.delete(runner);
+        return state;
+      };
+      return Object.freeze({ ...runner,
+        tick: () => release(runner.tick()), step: () => release(runner.step()),
+        cancel: (reason?: string) => release(runner.cancel(reason)) });
     }
   });
 }
