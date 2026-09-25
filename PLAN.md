@@ -457,9 +457,15 @@ reactive interruption, parallel results, repeat budgets, and runs without a blac
   the declaring tree URI, and configured runner creation applies the step budget
   and isolated blackboard initialization. JSON/YAML equivalence, merge semantics,
   reference errors, and runner isolation have deterministic tests and a file example.
-  Next: extension declarations, identity merging, source-relative extension paths,
-  and their provenance, followed by extension resolution/lifecycle. Debugger settings
-  and live reconfiguration await their runtime implementations.
+  Extension declarations now validate exactly one name/path, merge by explicit or
+  derived ID, resolve paths from their declaring source URI before merging, preserve
+  deterministic order and per-option provenance, and support disabling inherited
+  entries. Duplicate IDs and conflicting sources fail explicitly. Configuration-only
+  inspection avoids factory calls; runner loading rejects enabled declarations until
+  a module loader is available. Tests cover JSON/YAML, relative paths across config
+  sources, identity conflicts, option merging, limits and disabled entries.
+  Next: extension catalogs, module resolution, manifests and setup/disposal lifecycle.
+  Debugger settings and live reconfiguration await their runtime implementations.
 
 Gate: equivalent JSON/YAML trees and configs yield equivalent canonical documents;
 portable custom types round-trip; unsupported functions fail clearly; YAML edge cases

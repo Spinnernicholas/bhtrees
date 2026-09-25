@@ -512,7 +512,8 @@ runner.tick();
 
 Precedence, low to high: library defaults, referenced config file, embedded tree
 config, explicit `options.config`, and `options.overrides`. Objects merge recursively;
-arrays replace. Empty objects do not clear inherited data. Null is an ordinary value
+arrays replace except `extensions`, which merges by identity as described below.
+Empty objects do not clear inherited data. Null is an ordinary value
 inside blackboard initial data, not a deletion marker. Every layer is validated,
 even if a later layer overrides it. `resolveConfiguration([{ config, source }, ...])`
 also exposes merging directly for application-defined layers.
@@ -525,6 +526,7 @@ Supported settings in this first configuration slice:
 | `runtime.errorPolicy` | `'stop'` | Only `'stop'` is implemented |
 | `blackboard.enabled` | `false` | Boolean |
 | `blackboard.initial` | `{}` | Plain record of portable JSON-shaped data |
+| `extensions` | `[]` | Validated declarations; module loading remains planned |
 
 All settings apply when creating a new runner; live reconfiguration is not
 implemented. `loaded.createRunner()` uses the resolved step budget and creates a
@@ -553,10 +555,67 @@ cannot themselves contain `configFile`. Structural tree validation and validatio
 of caller-supplied configuration precede I/O; factories run after configuration
 resolution. Explicit layers are copied before awaiting the host reader.
 
-Debugger and extension namespaces, extension identity merging/provenance, live
-settings, and custom-value envelopes in configuration remain planned; these fields
-are rejected rather than silently ignored. Run `npm run build`, then
+Debugger settings, live reconfiguration, and custom-value envelopes in configuration
+remain planned. Run `npm run build`, then
 `node examples/configuration.js` for file-relative YAML loading and isolated runners.
+
+## Extension declarations and configuration resolution
+
+Configuration accepts an `extensions` array. Every declaration needs exactly one
+of `name` or `path`, plus optional `id`, `enabled`, and `options` (a plain data record).
+Names are catalog identifiers; paths are URI references. This slice resolves and
+merges declarations without importing modules, looking up names, or running setup.
+
+```yaml
+extensions:
+  - name: metrics
+    options:
+      counters: [ticks, waits]
+  - id: combat
+    path: ./plugins/combat.js
+    enabled: false
+    options:
+      retreatHealth: 0.25
+```
+
+The merge ID defaults to `name`, or to the resolved absolute URI for a path
+declaration. Explicit IDs remain stable across sources. Each path is resolved
+against its own declaring source before merging: a referenced config uses that
+file's URI; embedded config uses the tree's `baseURI`. Explicit config and overrides
+use `configBaseURI` and `overridesBaseURI`, respectively, falling back to the tree's
+`baseURI`. Direct `resolveConfiguration` layers use `source.uri`. Relative paths
+without a declaring URI fail, including disabled declarations. Use absolute `file:`
+URLs for filesystem paths; native path handling belongs to future host adapters.
+
+Declarations with the same ID merge in precedence order, retaining the first
+declaration's position. New IDs append. Options merge recursively, option arrays
+replace, and omitted `enabled` preserves an inherited setting. New declarations
+default to `enabled: true` and `options: {}`. An empty extension list leaves inherited
+entries intact; disable an entry using its name/path and `enabled: false`.
+ID-only overrides are not accepted. The same ID must continue to identify the same
+name or resolved URI; attempts to retarget an ID fail. Duplicate IDs in one source,
+including path spellings that resolve to the same URI, also fail. Different IDs
+may still refer to one eventual manifest; checking manifest identity is future work.
+
+Resolved `config.extensions` includes required IDs, enabled flags, options, and
+absolute paths. The entire result is frozen. Provenance uses stable array positions,
+such as `/extensions/0/path` and `/extensions/0/options/retreatHealth`, and tracks
+each field's effective source. Repeated source fields update their provenance;
+inherited options keep theirs. Implicit enabled/options defaults are labeled
+`defaults`. Limits are 1,000 declarations per source and 1,000 resolved extensions;
+the declaration array and its options share the 100,000-value / 128-level bound.
+
+`await resolveTreeConfiguration(text, options)` applies the same config-file loading
+and precedence as `loadConfiguredTree`, returning `{ config, provenance }` without
+constructing nodes or executing factories. Structural tree validation still requires
+its implementations in the supplied registry. Use this API to inspect enabled
+extension declarations. `loadConfiguredTree` currently rejects enabled extensions
+before factory calls, since module loading and lifecycle are not implemented; it can
+create runners when all declarations are disabled. Neither API fetches extension
+modules. Names and option schemas will be checked by the future manifest loader.
+
+Run `npm run build`, then `node examples/extension-config.js` for source-relative
+path resolution, option merging, disabling, and provenance.
 
 ## YAML application profile
 
@@ -856,7 +915,7 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
-Not implemented yet: full YAML syntax beyond the documented profile, extension/debugger
+Not implemented yet: full YAML syntax beyond the documented profile, debugger
 configuration and extension loading, debugger controller/UI, recordings/checkpoints,
 standalone bundles or environment adapters. The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.

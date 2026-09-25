@@ -3,8 +3,23 @@ import type { ActionImplementation, ActionContext, Clock, NodeDefinition, Runner
 import type { NodeFactory, NodeFactoryOptions, CreateNodeOptions } from 'bhtrees';
 import { parseYaml, stringifyYaml, YamlError } from 'bhtrees';
 import type { YamlValue } from 'bhtrees';
-import { encodeConfig, decodeConfig, toConfigDocument, fromConfigDocument, resolveConfiguration, loadConfiguredTree } from 'bhtrees';
-import type { Configuration, ConfiguredTree, ConfigFileContent, TreeSerializationOptions } from 'bhtrees';
+import { encodeConfig, decodeConfig, toConfigDocument, fromConfigDocument, resolveConfiguration, loadConfiguredTree, resolveTreeConfiguration } from 'bhtrees';
+import type { Configuration, ExtensionDeclaration, ResolvedExtension, ConfiguredTree, ConfigFileContent, TreeSerializationOptions } from 'bhtrees';
+
+const extension: ExtensionDeclaration = { id: 'combat', path: './combat.js', enabled: false, options: { radius: 5 } };
+const extensionConfig: Configuration = { extensions: [extension, { name: 'metrics' }] };
+const extensions = resolveConfiguration([{ config: extensionConfig, source: { layer: 'example', uri: 'file:///app/config.yaml' } }]);
+const resolvedExtension: ResolvedExtension = extensions.config.extensions[0];
+// @ts-expect-error Resolved extension flags are readonly.
+resolvedExtension.enabled = true;
+// @ts-expect-error Resolved extension option records are readonly.
+resolvedExtension.options.radius = 8;
+// @ts-expect-error A declaration requires exactly one of name and path.
+const ambiguousExtension: ExtensionDeclaration = { name: 'combat', path: './combat.js' };
+// @ts-expect-error ID-only declarations cannot identify a source.
+const missingExtensionSource: ExtensionDeclaration = { id: 'combat', enabled: false };
+void ambiguousExtension; void missingExtensionSource;
+void resolveTreeConfiguration('{}', { config: extensionConfig, configBaseURI: 'file:///app/config.yaml' });
 
 const configuration: Configuration = { runtime: { maxStepsPerTick: 10, errorPolicy: 'stop' }, blackboard: { enabled: true, initial: { count: 0 } } };
 const configText: string = encodeConfig(configuration, { codec: 'yaml' });

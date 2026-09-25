@@ -9,6 +9,6 @@ export type { ValueCodec, PortableValue } from './values.js';
 export { parseYaml, stringifyYaml, YamlError } from './yaml.js';
 export type { YamlValue } from './yaml.js';
 export { toConfigDocument, fromConfigDocument, encodeConfig, decodeConfig, resolveConfiguration } from './config.js';
-export type { Configuration, ConfigDocument, ConfigCodecOptions, ConfigSource, ConfigLayer, ResolvedConfiguration } from './config.js';
-export { loadConfiguredTree } from './config-loader.js';
+export type { Configuration, ExtensionDeclaration, ResolvedExtension, ConfigDocument, ConfigCodecOptions, ConfigSource, ConfigLayer, ResolvedConfiguration } from './config.js';
+export { loadConfiguredTree, resolveTreeConfiguration } from './config-loader.js';
 export type { ConfiguredTree, ConfiguredTreeOptions, ConfiguredRunnerOptions, ConfigFileContent } from './config-loader.js';

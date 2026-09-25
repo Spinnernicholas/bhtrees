@@ -39,7 +39,7 @@ test('configuration rejects unknown settings, invalid types, accessors and recur
     [{ blackboard: { enabled: 1 } }, '$.config.blackboard.enabled'],
     [{ blackboard: { initial: [] } }, '$.config.blackboard.initial'],
     [{ debugger: { enabled: true } }, '$.config.debugger'],
-    [{ extensions: [] }, '$.config.extensions'],
+    [{ extensions: null }, '$.config.extensions'],
     [{ runtime: { maxStepsPerTick: undefined } }, '$.config.runtime.maxStepsPerTick']
   ]) assert.throws(() => toConfigDocument(config), at(path));
   const accessor = Object.defineProperty({}, 'enabled', { get() { throw Error('getter ran'); } });
@@ -80,7 +80,7 @@ test('layer merging preserves leaf provenance, replaces arrays and treats null a
 
 test('defaults and special keys are safe, and empty maps merge without clearing', () => {
   const defaults = resolveConfiguration();
-  assert.deepEqual(plain(defaults.config), { runtime: { maxStepsPerTick: 1000, errorPolicy: 'stop' }, blackboard: { enabled: false, initial: {} } });
+  assert.deepEqual(plain(defaults.config), { runtime: { maxStepsPerTick: 1000, errorPolicy: 'stop' }, blackboard: { enabled: false, initial: {} }, extensions: [] });
   const resolved = resolveConfiguration([
     { config: { blackboard: { initial: JSON.parse('{"__proto__":{"polluted":true},"constructor":5}') } }, source: { layer: 'initial' } },
     { config: { blackboard: { initial: {} } }, source: { layer: 'empty' } }

@@ -1,5 +1,5 @@
 import { DocumentError } from './document-error.js';
-import { decodeConfig, parseDocumentText, resolveConfiguration, validateConfiguration, copyConfigValue } from './config.js';
+import { decodeConfig, parseDocumentText, resolveConfiguration, validateConfiguration, copyConfigValue, validateConfigURI, resolveConfigURI } from './config.js';
 import type { Configuration, ConfigLayer, ResolvedConfiguration } from './config.js';
 import { fromTreeDocument, validateTreeDocument } from './serialization.js';
 import type { SerializationOptions, TreeDocument } from './serialization.js';
@@ -14,6 +14,9 @@ export interface ConfiguredTreeOptions extends SerializationOptions {
   readConfig?: (uri: string) => ConfigFileContent | Promise<ConfigFileContent>;
   config?: Configuration;
   overrides?: Configuration;
+  /** Declaring URI for explicit config/overrides; defaults to baseURI. */
+  configBaseURI?: string;
+  overridesBaseURI?: string;
 }
 export type ConfiguredRunnerOptions = Omit<RunnerOptions, 'maxStepsPerTick' | 'blackboard'>;
 export interface ConfiguredTree extends ResolvedConfiguration {
@@ -24,26 +27,20 @@ export interface ConfiguredTree extends ResolvedConfiguration {
 function fail(path: string, message: string): never { throw new DocumentError(path, message); }
 
 /** Resolve one config reference through an injected host reader, then build the tree. */
-export async function loadConfiguredTree(text: string, options: ConfiguredTreeOptions = {}): Promise<ConfiguredTree> {
+async function prepareConfiguredTree(text: string, options: ConfiguredTreeOptions) {
   const { registry, codec, baseURI, readConfig } = options;
+  const configBaseURI = options.configBaseURI ?? baseURI, overridesBaseURI = options.overridesBaseURI ?? baseURI;
   const document = parseDocumentText(text, { codec }) as TreeDocument;
   validateTreeDocument(document, { registry });
   // Snapshot caller-owned layers before awaiting host I/O.
   const explicit = options.config === undefined ? undefined : validateConfiguration(options.config, '$options.config');
   const overrides = options.overrides === undefined ? undefined : validateConfiguration(options.overrides, '$options.overrides');
-  if (baseURI !== undefined) {
-    try {
-      if (typeof baseURI !== 'string' || /^[a-zA-Z]:[\\/]/.test(baseURI) || baseURI.includes('\\')) throw Error('Use a URI');
-      new URL(baseURI);
-    } catch { fail('$options.baseURI', 'Expected an absolute base URI; use file URLs for filesystem paths'); }
-  }
+  if (baseURI !== undefined) validateConfigURI(baseURI, '$options.baseURI');
+  if (configBaseURI !== undefined) validateConfigURI(configBaseURI, '$options.configBaseURI');
+  if (overridesBaseURI !== undefined) validateConfigURI(overridesBaseURI, '$options.overridesBaseURI');
   const layers: ConfigLayer[] = [];
   if (document.configFile !== undefined) {
-    let uri: string;
-    try {
-      if (/^[a-zA-Z]:[\\/]/.test(document.configFile) || document.configFile.includes('\\')) throw Error('Use a URI');
-      uri = new URL(document.configFile, baseURI).href;
-    } catch { return fail('$.configFile', 'Relative configFile requires an absolute baseURI; use file URLs for filesystem paths'); }
+    const uri = resolveConfigURI(document.configFile, baseURI, '$.configFile');
     if (typeof readConfig !== 'function') fail('$.configFile', 'A readConfig host callback is required');
     let referenced: Configuration;
     try {
@@ -56,9 +53,21 @@ export async function loadConfiguredTree(text: string, options: ConfiguredTreeOp
     layers.push({ config: referenced, source: { layer: 'file', uri: uri! } });
   }
   if (document.config !== undefined) layers.push({ config: document.config, source: { layer: 'embedded', ...(baseURI ? { uri: baseURI } : {}) } });
-  if (explicit !== undefined) layers.push({ config: explicit, source: { layer: 'explicit' } });
-  if (overrides !== undefined) layers.push({ config: overrides, source: { layer: 'overrides' } });
+  if (explicit !== undefined) layers.push({ config: explicit, source: { layer: 'explicit', ...(configBaseURI ? { uri: configBaseURI } : {}) } });
+  if (overrides !== undefined) layers.push({ config: overrides, source: { layer: 'overrides', ...(overridesBaseURI ? { uri: overridesBaseURI } : {}) } });
   const resolved = resolveConfiguration(layers);
+  return { document, registry, resolved };
+}
+
+/** Resolve configuration for inspection without constructing nodes or loading extensions. */
+export async function resolveTreeConfiguration(text: string, options: ConfiguredTreeOptions = {}): Promise<ResolvedConfiguration> {
+  return (await prepareConfiguredTree(text, options)).resolved;
+}
+
+export async function loadConfiguredTree(text: string, options: ConfiguredTreeOptions = {}): Promise<ConfiguredTree> {
+  const { document, registry, resolved } = await prepareConfiguredTree(text, options);
+  const pending = resolved.config.extensions.findIndex(extension => extension.enabled);
+  if (pending >= 0) fail(`$.config.extensions[${pending}]`, 'Enabled extensions require an extension loader; use resolveTreeConfiguration to inspect declarations');
   const tree = fromTreeDocument(document, { registry });
   return Object.freeze({ tree, ...resolved,
     createRunner(options: ConfiguredRunnerOptions = {}) {
