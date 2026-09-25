@@ -470,7 +470,7 @@ reactive interruption, parallel results, repeat budgets, and runs without a blac
   installs extension implementations before binding nodes and cancels managed runners
   before cleanup. Node filesystem/package resolution and shared timer scheduling
   are now implemented; browser URL loading is also implemented. Adventure Land
-  integration and declarative option schemas remain pending.
+  live validation and declarative option schemas remain pending.
   Debugger settings and live reconfiguration await their runtime implementations.
 
 Gate: equivalent JSON/YAML trees and configs yield equivalent canonical documents;
@@ -493,7 +493,13 @@ and configuration precedence have fixture-based coverage.
   catalog bases, host name/module resolution, fetch/module policies and abort cleanup.
   Redirecting documents are rejected to retain unambiguous relative-path provenance.
   Unit tests and a real Chrome smoke cover separate config loading, relative module
-  imports, execution and disposal. Adventure Land integration remains the next host task.
+  imports, execution and disposal.
+  Added `bhtrees/adventure-land` host sessions with injected document/module readers,
+  game services and a shared scheduler/wait clock. Sessions start explicitly and stop
+  scheduling/cancel synchronously before async extension cleanup. Mock-host tests cover
+  custom URL schemes, pause/continue, interruption, setup rollback, abort and cleanup
+  failures. An interruption example and teardown wiring guidance are included; live
+  Adventure Land validation is still pending. Standalone distribution is next.
   Implemented a host-neutral timer scheduler with start/stop/dispose, injectable
   clocks, before/after tick hooks, pause-aware driving, terminal cleanup, and stale
   callback protection. The browser playground now uses it. Deterministic tests cover

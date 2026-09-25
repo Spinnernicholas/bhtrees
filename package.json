@@ -9,6 +9,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./adventure-land": {
+      "types": "./dist/adventure-land.d.ts",
+      "import": "./dist/adventure-land.js",
+      "default": "./dist/adventure-land.js"
+    },
     "./browser": {
       "types": "./dist/browser.d.ts",
       "import": "./dist/browser.js",

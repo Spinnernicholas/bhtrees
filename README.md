@@ -984,6 +984,60 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
+## Adventure Land host sessions
+
+`bhtrees/adventure-land` provides `loadAdventureLandSession(path, options)` with
+injected host document/module readers, services and timers. It creates a configured
+tree, runner and scheduler together. No game globals or CODE slots are modified.
+The adapter has deterministic host-mock coverage; live Adventure Land execution
+has **not** been validated. Run `node examples/adventure-land.js` after building
+for a movement interruption and cleanup demonstrator.
+
+```js
+import { loadAdventureLandSession } from './dist/adventure-land.js';
+import { readBrowserConfig } from './dist/browser.js';
+
+const session = await loadAdventureLandSession('https://my-host.example/mission.yaml', {
+  host: {
+    readDocument: uri => readBrowserConfig(uri),
+    importModule: uri => import(uri),
+    services: { character, move, stop }, // Explicitly pass the game's functions/objects.
+    clock: { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: id => clearTimeout(id) }
+  },
+  scheduler: { intervalMs: 100, onTick: snapshot => console.log(snapshot.status) }
+});
+session.start();
+```
+
+The host reader returns `{ text, codec: 'json' | 'yaml' }` for the tree and referenced
+config. Relative paths require `baseURI` and retain their declaring document's base.
+Custom absolute schemes such as `al://slots/...` work when your reader and importer
+implement them; they are not built-in CODE-slot APIs. `extensions` accepts built-ins,
+catalog manifests/absolute URLs, `resolveName` and `allowModule`. A host importer
+must return a manifest or module namespace with a default manifest; a script loader
+that returns no manifest needs an explicit registration bridge. Use a custom
+`extensionLoader` to replace the default. No evaluation or implicit downloading is
+performed by this adapter.
+
+Sessions start idle. `session.start()` starts asynchronous driving; pause and continue
+through `session.runner`. The host clock drives both the scheduler and runner waits.
+Manual `runner.tick()`/`step()` remain available. Terminal results stop the scheduler;
+call `session.dispose()` to release extension resources. Disposal immediately stops
+the scheduler and cancels active work, then returns an idempotent promise for extension
+cleanup. Action cancellation hooks must stop their own game operations. Cleanup attempts
+all resources and reports failures together. Do not share a session's `configured`
+object with another owner or dispose its components separately.
+
+Wire disposal into your existing game teardown handler. Adventure Land exposes
+[`on_destroy` in its CODE API](https://www.adventure.land/); compose with any existing
+handler rather than replacing its work. Teardown should abort pending loading through
+an `AbortController` and call `session?.dispose().catch(reportError)` once a session
+exists. The loading `signal` is checked at async boundaries: readers/importers must
+implement their own transport cancellation if needed. If loading completes after
+abort, acquired resources are disposed before rejection. After loading, aborting the
+signal does not dispose the session. Since the host may not await asynchronous teardown,
+release game-critical resources synchronously in cancellation hooks.
+
 ## Browser URL loading
 
 ```js
@@ -1097,5 +1151,5 @@ The browser playground demonstrates simulation advancement in `beforeTick`.
 
 Not implemented yet: full YAML syntax beyond the documented profile, debugger
 configuration, debugger controller/UI, recordings/checkpoints,
-standalone bundles or an Adventure Land adapter. The engine uses standard host timers by default and no DOM or game
+standalone bundles. The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.

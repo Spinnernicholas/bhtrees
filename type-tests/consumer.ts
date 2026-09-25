@@ -7,6 +7,12 @@ import { encodeConfig, decodeConfig, toConfigDocument, fromConfigDocument, resol
 import type { Configuration, ExtensionDeclaration, ResolvedExtension, ConfiguredTree, ConfigFileContent, TreeSerializationOptions } from 'bhtrees';
 import { createExtensionLoader } from 'bhtrees';
 import type { ExtensionManifest } from 'bhtrees';
+import { loadAdventureLandSession } from 'bhtrees/adventure-land';
+import type { AdventureLandSession } from 'bhtrees/adventure-land';
+const gameSession: Promise<AdventureLandSession> = loadAdventureLandSession('al://slots/tree.json', {
+  host: { readDocument: () => ({ text: '{}', codec: 'json' }), services: { character: {} } }
+});
+void gameSession;
 import { loadBrowserTree, createBrowserExtensionLoader, readBrowserConfig } from 'bhtrees/browser';
 const browserTree: Promise<ConfiguredTree> = loadBrowserTree('./mission.yaml', { baseURI: 'https://example.test/app/' });
 const browserConfig: Promise<ConfigFileContent> = readBrowserConfig('https://example.test/config.json');
