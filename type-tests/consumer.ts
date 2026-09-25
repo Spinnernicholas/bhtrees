@@ -7,6 +7,14 @@ import { encodeConfig, decodeConfig, toConfigDocument, fromConfigDocument, resol
 import type { Configuration, ExtensionDeclaration, ResolvedExtension, ConfiguredTree, ConfigFileContent, TreeSerializationOptions } from 'bhtrees';
 import { createExtensionLoader } from 'bhtrees';
 import type { ExtensionManifest } from 'bhtrees';
+import { createDebugger } from 'bhtrees';
+import type { DebugSnapshot, DebugCommandResult } from 'bhtrees';
+const debugClient = createDebugger(createRunner(action({ id: 'debug', tick: () => RUNNING })));
+const debugResult: DebugCommandResult = debugClient.command({ type: 'select', activationId: null });
+debugClient.subscribe((snapshot: DebugSnapshot) => { void snapshot.selection; });
+// @ts-expect-error Unsupported command is not advertised by the client.
+debugClient.command({ type: 'stepOver' });
+void debugResult;
 import { loadAdventureLandSession } from 'bhtrees/adventure-land';
 import type { AdventureLandSession } from 'bhtrees/adventure-land';
 const gameSession: Promise<AdventureLandSession> = loadAdventureLandSession('al://slots/tree.json', {

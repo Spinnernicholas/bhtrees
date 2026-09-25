@@ -523,6 +523,15 @@ Run browser and Adventure Land smoke examples in their real host environments.
 ### Phase 5: Debugger controller and persistence
 
 - Finish controls, conditional breakpoints, watchpoints, profiling, and inspection.
+  Implemented the first local `createDebugger` client: versioned snapshots/capabilities,
+  validated pause/continue/step-into/tick/cancel/select commands, live activation
+  inspection, immediate multi-view subscriptions and an observable runner wrapper.
+  Observer errors and reentrant commands are isolated; disposal leaves execution
+  intact. External settlements use explicit refresh or the next wrapped drive.
+  The browser playground uses the client for controls/render notifications and passes
+  Chrome smoke coverage. Snapshots remain live inspection values, not recordings.
+  Step-over/out, breakpoints/watchpoints, profiling and static definition inspection
+  remain pending; transition instrumentation is the next controller task.
 - Add bounded recording, historical snapshots, checkpoint capability checks/restore hooks.
 - Implement local and Node remote transports, reconnect, and resynchronization.
 

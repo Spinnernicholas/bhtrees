@@ -1,4 +1,4 @@
-import { createRunner, createRunnerScheduler, RUNNING } from '../../dist/index.js';
+import { createRunner, createRunnerScheduler, createDebugger, RUNNING } from '../../dist/index.js';
 import { mountTreeView } from './tree-view.js';
 import { createWorld, advanceWorld, createMission } from './game.js';
 
@@ -16,7 +16,7 @@ formatControl.onchange = () => {
   location.assign(url);
 };
 let missionText;
-let runner, scheduler, lastSignature = '';
+let runner, scheduler, debug, lastSignature = '';
 let previousTime = performance.now();
 function log(message) {
   const item = document.createElement('li');
@@ -66,6 +66,7 @@ function render() {
 }
 function reset() {
   scheduler?.dispose();
+  debug?.dispose();
   runner?.cancel('reset');
   previousTime = performance.now();
   treeView?.dispose();
@@ -76,9 +77,21 @@ function reset() {
     onSelect(id) { selectedNode = id; render(); } });
   treeView.setMode(byId('tree-mode').value);
   mountWorld();
-  runner = createRunner(tree, { input: { name: byId('name').value } });
+  attachRunner();
   lastSignature = ''; log('Reset â€” ready to start');
   render();
+}
+function attachRunner() {
+  debug?.dispose();
+  debug = createDebugger(createRunner(tree, { input: { name: byId('name').value } }), {
+    onListenerError: error => log(`Debugger view failed: ${error.message}`)
+  });
+  runner = debug.runner;
+  debug.subscribe(render);
+}
+function execute(type) {
+  const result = debug.command({ type });
+  if (!result.ok) log(`${result.code}: ${result.message}`);
 }
 function startScheduler() {
   scheduler?.dispose();
@@ -89,7 +102,6 @@ function startScheduler() {
       advanceWorld(world, Math.min((now - previousTime) / 1000, 0.2));
       previousTime = now;
     },
-    onTick: render,
     onError(error) { log(`Scheduler failed: ${error.message}`); render(); }
   });
   scheduler.start();
@@ -97,25 +109,25 @@ function startScheduler() {
 byId('reset').onclick = reset;
 byId('start').onclick = () => {
   if (runner.snapshot().status !== 'idle') return;
-  runner = createRunner(tree, { input: { name: byId('name').value } });
+  attachRunner();
   previousTime = performance.now();
-  runner.tick(); log('start'); render();
+  execute('tick'); log('start');
   startScheduler();
 };
 // A repeated RUNNING action gets one simulation frame before its next evaluation.
 function stepExecution() {
   if (runner.snapshot().frames.at(-1)?.phase === 'running') advanceWorld(world, 0.1);
-  runner.step();
+  execute('stepInto');
 }
 signal.onclick = () => { if (!signal.disabled) world.radarPing = true; };
 for (const command of ['pause', 'continue', 'step', 'cancel']) {
   byId(command).onclick = () => {
     if (command === 'step' && runner.snapshot().status === 'idle') {
-      runner = createRunner(tree, { input: { name: byId('name').value } });
+      attachRunner();
     }
     previousTime = performance.now();
     if (command === 'step') stepExecution();
-    else runner[command]();
+    else execute(command);
     if (command === 'continue') startScheduler();
     log(command); render();
   };
@@ -131,7 +143,7 @@ try {
   byId('reset').disabled = false;
   byId('tree-mode').disabled = false;
   formatControl.disabled = false;
-  addEventListener('pagehide', () => { scheduler?.dispose(); runner.cancel('page closed'); treeView.dispose(); }, { once: true });
+  addEventListener('pagehide', () => { scheduler?.dispose(); debug.dispose(); runner.cancel('page closed'); treeView.dispose(); }, { once: true });
 } catch (error) {
   for (const control of controls) control.disabled = true;
   formatControl.disabled = false;

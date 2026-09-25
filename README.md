@@ -984,6 +984,48 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
+## Local debugger controller
+
+```js
+import { createDebugger, createRunnerScheduler } from 'bhtrees';
+
+const debug = createDebugger(runner);
+const unsubscribe = debug.subscribe(snapshot => console.log(snapshot.runner));
+const scheduler = createRunnerScheduler(debug.runner);
+debug.command({ type: 'stepInto' }); // One engine transition, leaving execution paused.
+debug.command({ type: 'continue' });
+scheduler.start();
+// When a view closes: unsubscribe(). When detaching the debugger: debug.dispose().
+```
+
+This initial local client exposes protocol `version: 1`, a `capabilities` list,
+`snapshot()`, `subscribe()`, `command()`, and `refresh()`. Commands support `pause`,
+`continue`, `stepInto`, `tick`, `cancel` (optional string `reason`), and `select`
+(`activationId` or `null`). Selection refers to a live activation and clears when it
+leaves execution. Commands return `{ ok: true, snapshot }` or
+`{ ok: false, code, message }`; unknown fields, unsupported commands, and invalid
+execution states are rejected. A paused logical tick is rejected; use `stepInto`
+or continue first. Action errors normally appear in the runner snapshot rather than
+as a rejected debugger command.
+
+Each subscription immediately receives the current snapshot. Views share a snapshot
+and monotonic revision for each publication. Use `debug.runner` when scheduling or
+driving externally so execution changes publish automatically. Async settlements and
+changes made directly through the original runner become visible on the next wrapped
+drive or an explicit `debug.refresh()`. There is no hidden polling loop. Snapshots
+retain the runner's live-value semantics and are not deep historical recordings.
+
+Listener errors do not prevent delivery to other listeners or alter runner results;
+provide `onListenerError(error)` to report them. Commands issued during execution or
+notification return `BUSY`; reentrant wrapper drives throw. Unsubscribe detaches one
+registration. Disposing the client removes all listeners but does not stop/cancel the
+runner or its scheduler; the wrapper remains usable for execution. Host owners must
+release those resources separately. The browser playground now uses this client for
+execution controls and rendering notifications.
+
+Step-over/out, breakpoints, watchpoints, recordings, checkpoints, remote transport,
+and reusable debugger renderers remain pending.
+
 ## Standalone global build
 
 `npm run build` also generates `dist/bhtrees.global.js`. Copy that file to your
@@ -1023,7 +1065,7 @@ TypeScript and esbuild are development-only build tools. The normal build, tests
 and package preparation regenerate the bundle; generated files remain in ignored
 `dist/`. Build validation rejects static external imports and accidental inclusion
 of the Node adapter or package runtime code. This build contains implemented APIs;
-the planned debugger controller and reusable renderers are still pending.
+advanced debugger controls and reusable renderers are still pending.
 
 ## Adventure Land host sessions
 
@@ -1191,6 +1233,6 @@ Create one scheduler per runner and dispose it when the host view/session closes
 The browser playground demonstrates simulation advancement in `beforeTick`.
 
 Not implemented yet: full YAML syntax beyond the documented profile, debugger
-configuration, debugger controller/UI, recordings/checkpoints.
+configuration, advanced debugger controls/UI, recordings/checkpoints.
 The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.
