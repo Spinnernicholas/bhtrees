@@ -531,7 +531,12 @@ Run browser and Adventure Land smoke examples in their real host environments.
   The browser playground uses the client for controls/render notifications and passes
   Chrome smoke coverage. Snapshots remain live inspection values, not recordings.
   Step-over/out, breakpoints/watchpoints, profiling and static definition inspection
-  remain pending; transition instrumentation is the next controller task.
+  remain pending. Runner subscriptions now emit completed transition boundaries and
+  execution-error/cancel events, with isolated observers and boundary pause support.
+  The controller retains bounded immutable metadata (default 200) and reports drops;
+  the remote UI shows a node-filtered timeline. No state recording or internal
+  cancellation trace is claimed. Deterministic tests cover parallel/timeout attribution,
+  pause/reentry, failures, retention and disposal. Breakpoint semantics are next.
 - Add bounded recording, historical snapshots, checkpoint capability checks/restore hooks.
 - Implement local and Node remote transports, reconnect, and resynchronization.
   Implemented the first Node-hosted browser debugger: loopback-only HTTP server,
@@ -539,7 +544,7 @@ Run browser and Adventure Land smoke examples in their real host environments.
   and descriptive value snapshots. A served UI displays the tree/live inspection and
   supported controls. A stateless async browser client polls/retries reads and refreshes
   full snapshots; commands are not replayed. HTTP tests and Chrome smoke cover the
-  connection. It does not record every transition or offer remote network/relay hosting;
+  connection. It exposes bounded transition metadata, but not historical state or remote network/relay hosting;
   transport/client unification, advanced controls and reusable renderers remain pending.
 
 Gate: controls behave consistently across nested and parallel activations; pause queues

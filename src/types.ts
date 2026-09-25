@@ -187,6 +187,8 @@ export interface Clock {
   clearTimeout(handle: Value): void;
 }
 export interface RunnerOptions {
+  /** Execution observers are isolated from runner errors. */
+  onEventError?: (error: unknown) => void;
   input?: Value;
   services?: Record<string, Value>;
   blackboard?: Blackboard;
@@ -224,10 +226,21 @@ export interface RunnerSnapshot {
   readonly frames: readonly FrameSnapshot[];
 }
 export interface Runner {
+  /** No initial event. Delivery is synchronous at completed engine boundaries. */
+  subscribe(listener: (event: RunnerEvent) => void): () => void;
   tick(): RunnerSnapshot;
   step(): RunnerSnapshot;
   pause(): void;
   continue(): void;
   snapshot(): RunnerSnapshot;
   cancel(reason?: string): RunnerSnapshot;
+}
+export interface RunnerEvent {
+  readonly type: 'transition' | 'error' | 'cancel';
+  readonly sequence: number;
+  readonly nodeId: string;
+  readonly activationId: number | null;
+  readonly phase: FramePhase | null;
+  readonly reason?: string;
+  readonly snapshot: RunnerSnapshot;
 }

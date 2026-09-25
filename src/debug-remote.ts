@@ -1,7 +1,9 @@
-import type { DebugCommand } from './debugger.js';
+import type { DebugCommand, DebugEventSummary } from './debugger.js';
 import type { DebugValue } from './debug-wire.js';
 
 export interface RemoteDebugState {
+  events: readonly DebugEventSummary[];
+  droppedEvents: number;
   version: 1;
   capabilities: readonly DebugCommand['type'][];
   definition: { root: string; nodes: readonly { id: string; type: string; children: readonly string[] }[] };

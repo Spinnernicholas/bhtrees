@@ -63,7 +63,8 @@ export async function startDebuggerServer({ client, tree, port = 0 }: DebuggerSe
           runner: { status: state.runner.status, paused: state.runner.paused, tick: state.runner.tick,
             transitions: state.runner.transitions, queuedResumes: state.runner.queuedResumes,
             frames: state.runner.frames, output: state.runner.output, error: state.runner.error, blackboard: state.runner.blackboard } };
-        send(200, { version: 1, capabilities: client.capabilities, definition: { root: tree.id, nodes }, snapshot: inspectDebugValue(snapshot) }); return;
+        send(200, { version: 1, capabilities: client.capabilities, definition: { root: tree.id, nodes },
+          snapshot: inspectDebugValue(snapshot), events: state.events, droppedEvents: state.droppedEvents }); return;
       }
       if (path === '/api/command' && request.method === 'POST') {
         if (request.headers['content-type']?.split(';')[0] !== 'application/json') { send(415, { error: 'Expected JSON' }); return; }

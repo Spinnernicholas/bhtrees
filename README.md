@@ -1014,7 +1014,8 @@ relay connections are not implemented.
 The page polls every 250 ms while idle, retries failed reads and resynchronizes from
 a complete snapshot. It rejects stale responses by revision. Commands are not retried
 automatically because they may already have executed when a connection fails. Polling
-captures current state, not every engine transition; it is not a recording. HTTP
+captures current state plus the controller's bounded transition metadata timeline;
+it is not a state recording. HTTP
 requests time out after five seconds in the provided browser transport.
 
 For a custom browser UI, `createRemoteDebugger({ url, token })` from `bhtrees/browser`
@@ -1031,8 +1032,11 @@ include a truncation marker. These descriptions cannot restore runtime state. Tr
 definitions are capped at 10000 nodes/50000 queued edges, and the UI limits nesting
 and displayed occurrences. Shared definitions show all their live activations.
 
+The remote UI also shows retained execution events with a node-ID text filter and a
+count of older events dropped by the controller. Events are captured in the runtime,
+so several transitions between polls remain visible within the retention limit.
 The remote UI currently offers the local controller's implemented controls. Breakpoints,
-step-over/out, watchpoints, history/profiling, multiple runners and reusable list/block
+step-over/out, watchpoints, historical state/profiling, multiple runners and reusable list/block
 renderer components remain pending. HTTP tests cover controls and access checks; a
 Chrome smoke test verifies the served UI connects and displays the runtime.
 
@@ -1077,6 +1081,34 @@ execution controls and rendering notifications.
 
 Step-over/out, breakpoints, watchpoints, recordings, checkpoints, and reusable
 debugger renderers remain pending. The Node HTTP transport is described above.
+
+## Execution events and bounded timeline
+
+`runner.subscribe(listener)` delivers an event after each counted engine transition,
+plus terminal execution-error and explicit cancellation events. There is no initial
+event. Each event contains a monotonic `sequence`, type, boundary node/activation ID,
+the phase before the transition, and the resulting runner snapshot. The initial root
+allocation has no prior activation/phase. A timeout boundary identifies the timeout
+decorator; branch suspension identifies the branch being suspended. This is engine
+transition instrumentation, not separate entry/resume/completion events for each node.
+Cancellation events report the explicit reason; internal interruption details remain
+future work.
+
+Subscriptions are independent and return idempotent unsubscribe functions. Execution
+event snapshots are only constructed when observers are attached. They retain ordinary
+live-value semantics, so storing them does not create immutable historical state.
+Delivery is synchronous at engine boundaries. Observers may call `runner.pause()` to
+stop before the next transition, but cannot tick, step or cancel reentrantly. Observer
+exceptions are isolated and can be reported with the runner option `onEventError`.
+Calling `step()` from an observer fails without changing the paused state.
+
+`createDebugger(runner, { eventLimit: 200 })` subscribes to these events and retains
+only immutable metadata: sequence, type, node/activation ID, prior phase, logical tick,
+transition counter, resulting runner status, and cancellation reason. Debug snapshots
+include `events` and `droppedEvents`. Limits range from 0 (collection disabled) to
+10000; the default is 200. Disposing the controller releases its execution subscription.
+Remote polling exposes this retained timeline, but does not guarantee every event
+reaches a slow client. Full recordings and historical inspection remain pending.
 
 ## Standalone global build
 

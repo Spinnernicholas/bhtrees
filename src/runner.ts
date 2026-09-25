@@ -1,6 +1,6 @@
 import { normalizeBinding, evaluateBinding } from './bindings.js';
 import type { Value, NodeDefinition, RunnerOptions, Runner, RunnerStatus, RunnerSnapshot,
-  ActionContext, Scope, ActionResult, Completion, WaitKind, FramePhase } from './types.js';
+  ActionContext, Scope, ActionResult, Completion, WaitKind, FramePhase, RunnerEvent } from './types.js';
 
 interface WaitToken {
   settled: boolean;
@@ -45,7 +45,7 @@ import { SUCCESS, FAILURE, RUNNING } from './nodes.js';
 import { waits, registerWait } from './waits.js';
 
 /** Create an isolated execution instance. Inputs and outputs are immutable by contract. */
-export function createRunner(root: NodeDefinition, { input, services = {}, blackboard, maxStepsPerTick = 1000,
+export function createRunner(root: NodeDefinition, { input, services = {}, blackboard, maxStepsPerTick = 1000, onEventError,
   clock = { setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms), clearTimeout: id => globalThis.clearTimeout(id) }
 }: RunnerOptions = {}): Runner {
   if (!Number.isInteger(maxStepsPerTick) || maxStepsPerTick < 1) throw new RangeError('Invalid step budget');
@@ -77,6 +77,8 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
   let error: unknown;
   let paused = false;
   let executing = false;
+  let notifying = false, eventSequence = 0;
+  const eventListeners = new Set<(event: RunnerEvent) => void>();
   let tickNumber = 0;
   let driveNumber = 0;
   let transitionNumber = 0;
@@ -482,11 +484,12 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
   }
 
   function drive(budget: number, manual: boolean) {
-    if (executing) throw new Error('Runner execution is not reentrant');
+    if (executing || notifying) throw new Error('Runner execution is not reentrant');
     if (paused && !manual) return snapshot();
     executing = true;
     driveNumber++;
     if (!manual) tickNumber++;
+    let boundary: { nodeId: string; activationId: number | null; phase: FramePhase | null } | undefined;
     try {
       yielded = false;
       if (!traversalOpen) {
@@ -508,24 +511,32 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
         }
       }
       for (let count = 0; count < budget; count++) {
+        const frame = stack.find(frame => frame.node.type === 'timeout' && frame.timer?.ready && frame.phase !== 'childResult') ?? stack.at(-1);
+        boundary = eventListeners.size ? { nodeId: frame?.node.id ?? root.id, activationId: frame?.activationId ?? null, phase: frame?.phase ?? null } : undefined;
         const advanced = transition();
         if (!advanced || yielded) {
           if (status === RUNNING && suspendParallelBranch()) {
             yielded = false;
             transitionNumber++;
+            emit('transition', boundary);
+            if (paused && !manual) break;
             continue;
           }
           if (advanced) transitionNumber++;
           finishTraversal();
+          if (advanced) emit('transition', boundary);
           break;
         }
         transitionNumber++;
-        if (status !== RUNNING) { finishTraversal(); break; }
+        if (status !== RUNNING) { finishTraversal(); emit('transition', boundary); break; }
+        emit('transition', boundary);
+        if (paused && !manual) break;
       }
     } catch (cause) {
       status = 'errored';
       const failures = cleanup('error');
       error = failures.length ? new AggregateError([cause, ...failures], 'Execution and cleanup failed') : cause;
+      emit('error', boundary);
     } finally {
       executing = false;
     }
@@ -533,18 +544,42 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
   }
 
   return Object.freeze({
+    subscribe(listener: (event: RunnerEvent) => void) {
+      if (typeof listener !== 'function') throw new TypeError('Expected an execution event listener');
+      const registration = (event: RunnerEvent) => listener(event);
+      eventListeners.add(registration);
+      return () => { eventListeners.delete(registration); };
+    },
     tick: () => drive(maxStepsPerTick, false),
-    step() { paused = true; return drive(1, true); },
+    step() {
+      if (executing || notifying) throw new Error('Runner execution is not reentrant');
+      paused = true; return drive(1, true);
+    },
     pause() { paused = true; },
     continue() { paused = false; },
     snapshot,
     cancel(reason = 'cancelled') {
-      if (executing) throw new Error('Cannot cancel during a handler');
+      if (executing || notifying) throw new Error('Cannot cancel during a handler or event notification');
       if (status !== 'idle' && status !== RUNNING) return snapshot();
       status = 'cancelled';
       const failures = cleanup(reason);
       if (failures.length) error = new AggregateError(failures, 'Cancellation cleanup failed');
+      emit('cancel', undefined, reason);
       return snapshot();
     }
   });
+  function emit(type: RunnerEvent['type'], boundary?: { nodeId: string; activationId: number | null; phase: FramePhase | null }, reason?: string) {
+    eventSequence++;
+    if (!eventListeners.size) return;
+    const event: RunnerEvent = Object.freeze({ type, sequence: eventSequence,
+      nodeId: boundary?.nodeId ?? root.id, activationId: boundary?.activationId ?? null,
+      phase: boundary?.phase ?? null, ...(reason === undefined ? {} : { reason }), snapshot: snapshot() });
+    notifying = true;
+    try {
+      for (const listener of [...eventListeners]) if (eventListeners.has(listener)) {
+        try { listener(event); }
+        catch (error) { try { onEventError?.(error); } catch { /* Observers cannot change execution outcomes. */ } }
+      }
+    } finally { notifying = false; }
+  }
 }

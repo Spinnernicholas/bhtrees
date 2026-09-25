@@ -21,10 +21,10 @@ try {
   const timer = setTimeout(() => child.kill(), 20000);
   try {
     await new Promise((resolve, reject) => { child.on('error', reject); child.on('close', resolve); });
-    if (!output.includes('data-connected="true"') || !output.includes('remote-smoke-node') || !output.includes('data-command="stepInto"')) {
+    if (!output.includes('data-connected="true"') || !output.includes('remote-smoke-node') || !output.includes('data-command="stepInto"') || !output.includes('transition 1')) {
       throw Error(`Remote browser smoke failed:\n${output}\n${errors.slice(-1500)}`);
     }
-    console.log('Remote browser smoke passed: authenticated connection, tree, live state and controls.');
+    console.log('Remote browser smoke passed: authenticated connection, tree, live state, controls and event timeline.');
   } finally { clearTimeout(timer); }
 } finally {
   await server.close(); debug.runner.cancel(); debug.dispose();

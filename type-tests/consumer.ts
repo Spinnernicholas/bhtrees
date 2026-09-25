@@ -15,6 +15,11 @@ void startDebuggerServer;
 import { createDebugger } from 'bhtrees';
 import type { DebugSnapshot, DebugCommandResult } from 'bhtrees';
 const debugClient = createDebugger(createRunner(action({ id: 'debug', tick: () => RUNNING })));
+const offExecutionEvents = debugClient.runner.subscribe(event => {
+  const kind: 'transition' | 'error' | 'cancel' = event.type;
+  void kind; void event.snapshot.transitions;
+});
+offExecutionEvents();
 const debugResult: DebugCommandResult = debugClient.command({ type: 'select', activationId: null });
 debugClient.subscribe((snapshot: DebugSnapshot) => { void snapshot.selection; });
 // @ts-expect-error Unsupported command is not advertised by the client.

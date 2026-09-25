@@ -1,8 +1,22 @@
-import type { Runner, RunnerSnapshot, FrameSnapshot } from './types.js';
+import type { Runner, RunnerSnapshot, FrameSnapshot, RunnerEvent } from './types.js';
+
+export interface DebugEventSummary {
+  readonly sequence: number;
+  readonly type: RunnerEvent['type'];
+  readonly nodeId: string;
+  readonly activationId: number | null;
+  readonly phase: RunnerEvent['phase'];
+  readonly tick: number;
+  readonly transition: number;
+  readonly status: RunnerSnapshot['status'];
+  readonly reason?: string;
+}
 
 export type DebugCommand = { type: 'pause' | 'continue' | 'stepInto' | 'tick' } |
   { type: 'cancel'; reason?: string } | { type: 'select'; activationId: number | null };
 export interface DebugSnapshot {
+  readonly events: readonly DebugEventSummary[];
+  readonly droppedEvents: number;
   readonly version: 1;
   readonly revision: number;
   readonly runner: RunnerSnapshot;
@@ -12,6 +26,8 @@ export interface DebugSnapshot {
 export type DebugCommandResult = { readonly ok: true; readonly snapshot: DebugSnapshot } |
   { readonly ok: false; readonly code: 'INVALID_COMMAND' | 'INVALID_STATE' | 'BUSY' | 'DISPOSED' | 'EXECUTION_ERROR'; readonly message: string };
 export interface DebuggerOptions {
+  /** Retained metadata events; default 200, maximum 10000, zero disables collection. */
+  eventLimit?: number;
   /** Observer errors are isolated from execution and other observers. */
   onListenerError?: (error: unknown) => void;
 }
@@ -31,13 +47,25 @@ export interface DebuggerClient {
 
 /** Local version-1 client. Snapshots are live inspection data, not historical copies. */
 export function createDebugger(source: Runner, options: DebuggerOptions = {}): DebuggerClient {
+  const eventLimit = options.eventLimit ?? 200;
+  if (!Number.isInteger(eventLimit) || eventLimit < 0 || eventLimit > 10000) throw new RangeError('Invalid debugger event limit');
+  const events: DebugEventSummary[] = [];
+  let droppedEvents = 0;
+  const unsubscribeEvents = eventLimit ? source.subscribe(event => {
+    events.push(Object.freeze({ sequence: event.sequence, type: event.type, nodeId: event.nodeId,
+      activationId: event.activationId, phase: event.phase, tick: event.snapshot.tick,
+      transition: event.snapshot.transitions, status: event.snapshot.status,
+      ...(event.reason === undefined ? {} : { reason: event.reason }) }));
+    if (events.length > eventLimit) { events.shift(); droppedEvents++; }
+  }) : () => {};
   const listeners = new Set<(snapshot: DebugSnapshot) => void>();
   let disposed = false, busy = false, revision = 0, selected: number | null = null;
   function capture(): DebugSnapshot {
     const runner = source.snapshot();
     const selection = runner.frames.find(frame => frame.activationId === selected) ?? null;
     if (!selection) selected = null;
-    return Object.freeze({ version: 1, revision, runner, selectedActivationId: selected, selection });
+    return Object.freeze({ version: 1, revision, runner, selectedActivationId: selected, selection,
+      events: Object.freeze([...events]), droppedEvents });
   }
   let current = capture();
   function notify(listener: (snapshot: DebugSnapshot) => void): void {
@@ -62,6 +90,7 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
     } finally { busy = false; }
   }
   const runner: Runner = Object.freeze({
+    subscribe: (listener: (event: RunnerEvent) => void) => source.subscribe(listener),
     tick: () => drive(() => source.tick()),
     step: () => drive(() => source.step()),
     pause: () => drive(() => source.pause()),
@@ -133,6 +162,6 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
       drive(() => undefined);
       return current;
     },
-    dispose() { disposed = true; listeners.clear(); }
+    dispose() { disposed = true; listeners.clear(); unsubscribeEvents(); }
   });
 }

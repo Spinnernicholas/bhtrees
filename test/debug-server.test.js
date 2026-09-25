@@ -28,6 +28,9 @@ test('HTTP remote client resynchronizes definitions and snapshots and drives val
   await remote.command({ type: 'continue' }); await remote.command({ type: 'tick' });
   assert.equal(debug.runner.snapshot().status, RUNNING);
   const current = await remote.read(); assert.ok(current.snapshot.revision > initial.snapshot.revision);
+  assert.ok(current.events.some(event => event.nodeId === 'running'));
+  assert.equal(current.events.at(-1).transition, current.snapshot.runner.transitions);
+  assert.equal(current.droppedEvents, 0);
   await remote.command({ type: 'cancel', reason: 'remote test' });
   assert.equal((await remote.read()).snapshot.runner.status, 'cancelled');
 });

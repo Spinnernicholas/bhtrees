@@ -5,6 +5,7 @@ export const debugPage = `<!doctype html>
 <h1>BHTrees remote debugger</h1><p id="connection" role="status">Connecting…</p>
 <nav aria-label="Execution controls" id="controls"></nav><p id="status"></p>
 <main><section><h2>Tree</h2><ul id="tree"></ul></section><section><h2>Inspection</h2><pre id="inspection"></pre></section></main>
+<section><h2>Execution events</h2><label>Filter by node <input id="event-filter"></label><p id="event-count"></p><pre id="events"></pre></section>
 <script type="module" src="/view.js"></script></html>`;
 
 export const debugView = `import { createRemoteDebugger } from '/client.js';
@@ -56,6 +57,12 @@ function render(state) {
   }
   byId('tree').replaceChildren(branch(state.definition.root, new Set(), 0));
   byId('inspection').textContent = JSON.stringify(selected ? { definition: nodes.get(selected), activations: live.filter(frame => frame.nodeId === selected) } : runner, null, 2);
+  const filter = byId('event-filter').value;
+  byId('event-count').textContent = state.events.length + ' retained; ' + state.droppedEvents + ' older events dropped';
+  byId('events').textContent = state.events.filter(event => event.nodeId.includes(filter)).map(event =>
+    '#' + event.sequence + ' tick ' + event.tick + ' transition ' + event.transition + ' · ' + event.nodeId +
+    ' [' + (event.activationId ?? '-') + '] · ' + event.type + ' · ' + (event.phase ?? '-') + ' → ' + event.status +
+    (event.reason ? ' · ' + event.reason : '')).join(String.fromCharCode(10));
   document.body.dataset.connected = 'true';
 }
 async function refresh() { const state = await client.read(); if (!stopped) render(state); }
