@@ -1,0 +1,12 @@
+format: bhtrees
+version: 1
+kind: config
+config:
+  runtime:
+    maxStepsPerTick: 10
+    errorPolicy: stop
+  blackboard:
+    enabled: true
+    initial:
+      visits: 0
+      greeting: Hello

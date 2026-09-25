@@ -475,8 +475,88 @@ codec described below; JSON remains the default.
 
 Run `npm run build`, then `node examples/documents.js` for a complete example.
 Tree documents support registered action/condition implementations and custom
-factories with data migrations. Configuration documents, checkpoints, and
-recordings remain planned.
+factories with data migrations. Configuration documents are supported as described
+below; checkpoints and recordings remain planned.
+
+## Configuration documents and loading
+
+`toConfigDocument(config)` / `fromConfigDocument(document)` use the version-1
+`{ format: 'bhtrees', version: 1, kind: 'config', config }` envelope.
+`encodeConfig` / `decodeConfig` support `{ codec: 'json' | 'yaml' }`, defaulting
+to JSON. Tree documents can also contain `config` and one `configFile` reference.
+Pass these fields to `encodeTree` / `toTreeDocument` options when authoring trees.
+Decoded definitions retain this metadata on re-export; explicit export options
+replace the corresponding stored field. Ordinary `decodeTree` and `createRunner`
+do not resolve or apply document configuration.
+
+Use `await loadConfiguredTree(text, options)` to resolve configuration and create
+a tree with a configured runner factory:
+
+```js
+const loaded = await loadConfiguredTree(treeText, {
+  registry,
+  codec: 'yaml',
+  baseURI: 'https://example.test/bots/mission.yaml',
+  readConfig: async uri => {
+    const response = await fetch(uri);
+    if (!response.ok) throw new Error(`Config request failed: ${response.status}`);
+    return { text: await response.text(), codec: 'yaml' };
+  },
+  config: { blackboard: { enabled: true } },
+  overrides: { runtime: { maxStepsPerTick: 100 } }
+});
+const runner = loaded.createRunner({ input: { name: 'Scout' }, services });
+console.log(loaded.config, loaded.provenance);
+runner.tick();
+```
+
+Precedence, low to high: library defaults, referenced config file, embedded tree
+config, explicit `options.config`, and `options.overrides`. Objects merge recursively;
+arrays replace. Empty objects do not clear inherited data. Null is an ordinary value
+inside blackboard initial data, not a deletion marker. Every layer is validated,
+even if a later layer overrides it. `resolveConfiguration([{ config, source }, ...])`
+also exposes merging directly for application-defined layers.
+
+Supported settings in this first configuration slice:
+
+| Setting | Default | Validation |
+| --- | --- | --- |
+| `runtime.maxStepsPerTick` | `1000` | Positive safe integer |
+| `runtime.errorPolicy` | `'stop'` | Only `'stop'` is implemented |
+| `blackboard.enabled` | `false` | Boolean |
+| `blackboard.initial` | `{}` | Plain record of portable JSON-shaped data |
+
+All settings apply when creating a new runner; live reconfiguration is not
+implemented. `loaded.createRunner()` uses the resolved step budget and creates a
+fresh, deeply copied blackboard per call when enabled. Disabled blackboards are
+absent even if initial data was supplied. Inputs, services, and clock remain runner
+arguments. Change the budget/blackboard through configuration overrides so the
+reported provenance stays accurate; use the ordinary runner API for explicitly
+shared caller-owned blackboards.
+
+`loaded.config` and `loaded.provenance` are deeply frozen. Provenance keys are JSON
+Pointers to effective leaves, with an array or empty object treated as one leaf.
+Each value contains `layer` (`defaults`, `file`, `embedded`, `explicit`, or
+`overrides`) and, for file/embedded data where available, the declaring `uri`.
+Plain data is copied without invoking getters. Cycles, unsupported values, unknown
+settings, and invalid envelopes produce `DocumentError` paths. Limits are 128
+levels and 100,000 values in initial data, 128 user layers, and 1,000,000 characters
+per encoded/decoded document.
+
+Relative `configFile` references require an absolute `baseURI` for the tree.
+Paths resolve against that URI, never the working directory. Use `file:` URLs for
+filesystem paths, including Windows paths. The loader calls the injected
+`readConfig(uri)` exactly once and expects `{ text, codec }`; it performs no implicit
+fetch or filesystem access. The host owns access policy and chooses the referenced
+file's codec. Read/decode errors include the resolved URI. Referenced config files
+cannot themselves contain `configFile`. Structural tree validation and validation
+of caller-supplied configuration precede I/O; factories run after configuration
+resolution. Explicit layers are copied before awaiting the host reader.
+
+Debugger and extension namespaces, extension identity merging/provenance, live
+settings, and custom-value envelopes in configuration remain planned; these fields
+are rejected rather than silently ignored. Run `npm run build`, then
+`node examples/configuration.js` for file-relative YAML loading and isolated runners.
 
 ## YAML application profile
 
@@ -776,7 +856,7 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
-Not implemented yet: full YAML syntax beyond the documented profile, non-tree documents,
-configuration and extensions, debugger controller/UI, recordings/checkpoints,
+Not implemented yet: full YAML syntax beyond the documented profile, extension/debugger
+configuration and extension loading, debugger controller/UI, recordings/checkpoints,
 standalone bundles or environment adapters. The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.

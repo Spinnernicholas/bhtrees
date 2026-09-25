@@ -1,5 +1,7 @@
 import { DocumentError } from './document-error.js';
 import { parseYaml, stringifyYaml } from './yaml.js';
+import { validateConfiguration } from './config.js';
+import type { Configuration } from './config.js';
 export { DocumentError } from './document-error.js';
 import { attachValueRegistry, registerValueType, toPortableValue, fromPortableValue } from './values.js';
 import type { ValueCodec, PortableValue } from './values.js';
@@ -103,8 +105,12 @@ export interface TreeDocument {
   kind: 'tree';
   root: string;
   nodes: TreeNodeDocument[];
+  config?: Configuration;
+  configFile?: string;
 }
 export interface SerializationOptions { registry?: TreeRegistry; codec?: 'json' | 'yaml' }
+export interface TreeSerializationOptions extends SerializationOptions { config?: Configuration; configFile?: string }
+const treeConfiguration = new WeakMap<NodeDefinition, { config?: Configuration; configFile?: string }>();
 const MAX_DEPTH = 128, MAX_NODES = 10000, MAX_TEXT = 1000000;
 const builtinTypes = ['sequence', 'selector', 'parallel', 'inverter', 'forceSuccess', 'forceFailure', 'retry', 'repeat', 'delay', 'timeout', 'cooldown', 'subtree'];
 function fail(path: string, message: string): never { throw new DocumentError(path, message); }
@@ -153,7 +159,8 @@ function sameAction(a: ActionDefinition, b: ActionDefinition) {
 }
 
 /** Encode definitions only. No services, runner state, or executable source is captured. */
-export function toTreeDocument(root: NodeDefinition, { registry }: SerializationOptions = {}): TreeDocument {
+export function toTreeDocument(root: NodeDefinition, options: TreeSerializationOptions = {}): TreeDocument {
+  const { registry } = options;
   const entries = registryEntries(registry), seen = new Map<string, NodeDefinition>(), active = new Set<NodeDefinition>();
   const table: TreeNodeDocument[] = [];
   function visit(node: NodeDefinition, path: string, depth: number): string {
@@ -203,6 +210,11 @@ export function toTreeDocument(root: NodeDefinition, { registry }: Serialization
     return node.id;
   }
   const document: TreeDocument = { format: 'bhtrees', version: 1, kind: 'tree', root: visit(root, '$root', 0), nodes: table };
+  const stored = treeConfiguration.get(root);
+  const config = options.config === undefined ? stored?.config : options.config;
+  const configFile = options.configFile === undefined ? stored?.configFile : options.configFile;
+  if (config !== undefined) document.config = validateConfiguration(config);
+  if (configFile !== undefined) document.configFile = configFile;
   // Reuse structural and graph validation, including counts and supported fields.
   readTreeDocument(document, { registry }, seen);
   return document;
@@ -226,16 +238,28 @@ function string(value: Value, path: string): string {
 export function fromTreeDocument(value: unknown, { registry }: SerializationOptions = {}): NodeDefinition {
   // Reject malformed structure/references before invoking any application factories.
   readTreeDocument(value, { registry }, undefined, true);
-  return readTreeDocument(value, { registry });
+  const tree = readTreeDocument(value, { registry });
+  const document = value as TreeDocument;
+  if (document.config !== undefined || document.configFile !== undefined) treeConfiguration.set(tree, {
+    ...(document.config === undefined ? {} : { config: validateConfiguration(document.config) }),
+    ...(document.configFile === undefined ? {} : { configFile: document.configFile })
+  });
+  return tree;
+}
+
+export function validateTreeDocument(value: unknown, options: SerializationOptions = {}): void {
+  readTreeDocument(value, options, undefined, true);
 }
 
 function readTreeDocument(value: unknown, { registry }: SerializationOptions, exported?: Map<string, NodeDefinition>, validateOnly = false): NodeDefinition {
   const entries = registryEntries(registry);
   const document = record(value, '$');
-  fields(document, ['format', 'version', 'kind', 'root', 'nodes'], '$');
+  fields(document, ['format', 'version', 'kind', 'root', 'nodes', 'config', 'configFile'], '$');
   if (document.format !== 'bhtrees') fail('$.format', 'Expected bhtrees');
   if (document.version !== 1) fail('$.version', 'Unsupported schema version; expected 1');
   if (document.kind !== 'tree') fail('$.kind', 'Expected tree');
+  if (Object.hasOwn(document, 'config')) validateConfiguration(document.config);
+  if (Object.hasOwn(document, 'configFile')) string(document.configFile, '$.configFile');
   const root = string(document.root, '$.root');
   if (!Array.isArray(document.nodes) || document.nodes.length === 0 || document.nodes.length > MAX_NODES) fail('$.nodes', 'Expected 1 to 10000 nodes');
   const table = new Map<string, { data: Record<string, Value>; path: string }>();
@@ -337,7 +361,7 @@ function readTreeDocument(value: unknown, { registry }: SerializationOptions, ex
   return result;
 }
 
-export function encodeTree(root: NodeDefinition, options: SerializationOptions = {}): string {
+export function encodeTree(root: NodeDefinition, options: TreeSerializationOptions = {}): string {
   if (options.codec === 'yaml') return stringifyYaml(toTreeDocument(root, options));
   if (options.codec !== undefined && options.codec !== 'json') fail('$codec', 'Unsupported codec');
   const text = JSON.stringify(toTreeDocument(root, options), null, 2);

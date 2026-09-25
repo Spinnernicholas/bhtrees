@@ -3,6 +3,28 @@ import type { ActionImplementation, ActionContext, Clock, NodeDefinition, Runner
 import type { NodeFactory, NodeFactoryOptions, CreateNodeOptions } from 'bhtrees';
 import { parseYaml, stringifyYaml, YamlError } from 'bhtrees';
 import type { YamlValue } from 'bhtrees';
+import { encodeConfig, decodeConfig, toConfigDocument, fromConfigDocument, resolveConfiguration, loadConfiguredTree } from 'bhtrees';
+import type { Configuration, ConfiguredTree, ConfigFileContent, TreeSerializationOptions } from 'bhtrees';
+
+const configuration: Configuration = { runtime: { maxStepsPerTick: 10, errorPolicy: 'stop' }, blackboard: { enabled: true, initial: { count: 0 } } };
+const configText: string = encodeConfig(configuration, { codec: 'yaml' });
+decodeConfig(configText, { codec: 'yaml' });
+fromConfigDocument(toConfigDocument(configuration));
+const resolution = resolveConfiguration([{ config: configuration, source: { layer: 'application' } }]);
+// @ts-expect-error Resolved settings are immutable.
+resolution.config.runtime.maxStepsPerTick = 2;
+// @ts-expect-error Only the implemented error policy is accepted.
+const unsupportedPolicy: Configuration = { runtime: { errorPolicy: 'ignore' } };
+const treeOptions: TreeSerializationOptions = { codec: 'yaml', config: configuration, configFile: './settings.yaml' };
+void unsupportedPolicy; void treeOptions;
+async function configuredConsumer(text: string) {
+  const loaded: ConfiguredTree = await loadConfiguredTree(text, { codec: 'yaml', baseURI: 'https://example.test/tree.yaml',
+    readConfig: async (): Promise<ConfigFileContent> => ({ text: configText, codec: 'yaml' }), overrides: configuration });
+  loaded.createRunner({ input: 'example', services: {} }).tick();
+  // @ts-expect-error Budget settings go through configuration overrides for provenance.
+  loaded.createRunner({ maxStepsPerTick: 1 });
+}
+void configuredConsumer;
 
 const yamlData: YamlValue = parseYaml('name: rover');
 const yamlText: string = stringifyYaml(yamlData);

@@ -438,7 +438,9 @@ reactive interruption, parallel results, repeat budgets, and runs without a blac
   and explicit child references, preserving shared definitions and factory identity
   through JSON round trips. Sequential node data migrations upgrade older payloads;
   structural preflight, factory-result validation, and field-path errors cover failures.
-  Next: configuration documents and resolution. Non-tree document kinds remain pending.
+  Version-1 config documents now support JSON/YAML, strict runtime/blackboard
+  settings, embedded config and one host-resolved configFile reference. Checkpoint
+  and recording document kinds remain pending.
 - Implement owned YAML parser/writer and conformance fixtures in parallel with schema work.
   Implemented initial application profile: block collections, single-line flow
   collections, quoted/plain scalars, comments, literal/folded block strings, and
@@ -449,6 +451,15 @@ reactive interruption, parallel results, repeat budgets, and runs without a blac
   flow/plain/quoted scalars, explicit indentation indicators, directives, anchors,
   aliases, tags and complex keys remain outside the profile. See README.md.
 - Implement embedded/separate config, provenance, precedence, and config resolution.
+  Implemented first slice: defaults/file/embedded/explicit/override precedence,
+  recursive object merging, array replacement, frozen effective configuration and
+  per-leaf source provenance. An injected reader resolves relative references from
+  the declaring tree URI, and configured runner creation applies the step budget
+  and isolated blackboard initialization. JSON/YAML equivalence, merge semantics,
+  reference errors, and runner isolation have deterministic tests and a file example.
+  Next: extension declarations, identity merging, source-relative extension paths,
+  and their provenance, followed by extension resolution/lifecycle. Debugger settings
+  and live reconfiguration await their runtime implementations.
 
 Gate: equivalent JSON/YAML trees and configs yield equivalent canonical documents;
 portable custom types round-trip; unsupported functions fail clearly; YAML edge cases
