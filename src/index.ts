@@ -6,3 +6,5 @@ export { createRegistry, toTreeDocument, fromTreeDocument, encodeTree, decodeTre
 export type { TreeRegistry, NodeFactory, NodeFactoryOptions, CreateNodeOptions, ActionImplementation, TreeDocument, TreeNodeDocument, TreeStepDocument, SerializationOptions } from './serialization.js';
 export { toPortableValue, fromPortableValue, encodeValue, decodeValue } from './values.js';
 export type { ValueCodec, PortableValue } from './values.js';
+export { parseYaml, stringifyYaml, YamlError } from './yaml.js';
+export type { YamlValue } from './yaml.js';

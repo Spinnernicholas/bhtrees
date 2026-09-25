@@ -7,7 +7,15 @@ const signal = byId('signal');
 const controls = document.querySelectorAll('button, input, select');
 for (const control of controls) control.disabled = true;
 byId('status').textContent = 'Loading mission...';
-let missionJSON;
+const missionFormat = new URL(location.href).searchParams.get('format') ?? 'json';
+const formatControl = byId('mission-format');
+formatControl.value = missionFormat;
+formatControl.onchange = () => {
+  const url = new URL(location.href);
+  url.searchParams.set('format', formatControl.value);
+  location.assign(url);
+};
+let missionText;
 let runner, lastSignature = '';
 let previousTime = performance.now();
 function log(message) {
@@ -61,7 +69,7 @@ function reset() {
   previousTime = performance.now();
   treeView?.dispose();
   world = createWorld();
-  const mission = createMission(world, missionJSON, log);
+  const mission = createMission(world, missionText, log, missionFormat);
   tree = mission.tree; selectedNode = tree.id;
   treeView = mountTreeView({ target: byId('tree'), tree, labels: mission.labels,
     onSelect(id) { selectedNode = id; render(); } });
@@ -96,13 +104,16 @@ for (const command of ['pause', 'continue', 'step', 'cancel']) {
   };
 }
 try {
-  const response = await fetch(new URL('./mission.json', import.meta.url));
+  if (!['json', 'yaml'].includes(missionFormat)) throw new Error(`Unsupported mission format: ${missionFormat}`);
+  const response = await fetch(new URL(`./mission.${missionFormat}`, import.meta.url));
   if (!response.ok) throw new Error(`Mission request failed (${response.status})`);
-  missionJSON = await response.text();
+  missionText = await response.text();
+  log(`Loaded mission.${missionFormat}`);
   reset();
   // Enable controls that are not managed by render(), then apply execution state.
   byId('reset').disabled = false;
   byId('tree-mode').disabled = false;
+  formatControl.disabled = false;
   const loop = setInterval(() => {
     const now = performance.now();
     const elapsed = Math.min((now - previousTime) / 1000, 0.2);
@@ -117,6 +128,7 @@ try {
   addEventListener('pagehide', () => { clearInterval(loop); runner.cancel('page closed'); treeView.dispose(); }, { once: true });
 } catch (error) {
   for (const control of controls) control.disabled = true;
+  formatControl.disabled = false;
   byId('status').textContent = 'Mission could not be loaded';
   byId('game-status').textContent = error.message;
   log(`Mission load failed: ${error.message}`);

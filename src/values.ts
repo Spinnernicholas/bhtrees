@@ -1,4 +1,5 @@
 import { DocumentError } from './document-error.js';
+import { parseYaml, stringifyYaml } from './yaml.js';
 import type { TreeRegistry, SerializationOptions } from './serialization.js';
 
 export interface ValueCodec<T> {
@@ -142,11 +143,15 @@ export function fromPortableValue(value: unknown, { registry }: SerializationOpt
   return decode(value, '$', 0);
 }
 export function encodeValue(value: unknown, options: SerializationOptions = {}): string {
+  if (options.codec === 'yaml') return stringifyYaml(toPortableValue(value, options));
+  if (options.codec !== undefined && options.codec !== 'json') fail('$codec', 'Unsupported codec');
   const text = JSON.stringify(toPortableValue(value, options));
   if (text.length > MAX_TEXT) fail('$', 'Value text exceeds 1000000 characters');
   return text;
 }
 export function decodeValue(text: string, options: SerializationOptions = {}): unknown {
+  if (options.codec === 'yaml') return fromPortableValue(parseYaml(text), options);
+  if (options.codec !== undefined && options.codec !== 'json') fail('$codec', 'Unsupported codec');
   if (typeof text !== 'string' || text.length > MAX_TEXT) fail('$', 'Expected value JSON text of at most 1000000 characters');
   let value: unknown;
   try { value = JSON.parse(text); } catch (error) { fail('$', `Invalid JSON: ${(error as Error).message}`); }

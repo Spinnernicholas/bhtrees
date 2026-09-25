@@ -1,10 +1,13 @@
 # Editing the browser example
 
 Run `npm run example:browser` from the repository root and open
-http://127.0.0.1:8080. Reload the page after editing files; Reset uses the JSON
-already loaded by the page.
+http://127.0.0.1:8080. Use **Mission format** to switch between JSON and YAML.
+Switching reloads the page and starts a fresh mission. You can open YAML directly at
+http://127.0.0.1:8080/examples/browser/index.html?format=yaml.
+Reload the page after editing files; Reset uses the document already loaded.
 
-- `mission.json`: edit the tree's order, conditions, bindings, and display labels.
+- `mission.json` / `mission.yaml`: edit the selected format's tree order, conditions,
+  bindings, and display labels. These are separate files; edits are not synchronized.
 - `game.js`: edit action functions, timing and speed constants, and the crystal list.
 - `app.js`: connects the simulation to the page controls and tree view.
 

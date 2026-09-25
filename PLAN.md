@@ -438,9 +438,16 @@ reactive interruption, parallel results, repeat budgets, and runs without a blac
   and explicit child references, preserving shared definitions and factory identity
   through JSON round trips. Sequential node data migrations upgrade older payloads;
   structural preflight, factory-result validation, and field-path errors cover failures.
-  Next: the owned YAML data-profile parser/writer and conformance fixtures, followed
-  by configuration documents and resolution. Non-tree document kinds remain pending.
+  Next: configuration documents and resolution. Non-tree document kinds remain pending.
 - Implement owned YAML parser/writer and conformance fixtures in parallel with schema work.
+  Implemented initial application profile: block collections, single-line flow
+  collections, quoted/plain scalars, comments, literal/folded block strings, and
+  document markers. Tree/value APIs select JSON or YAML explicitly. Errors report
+  line/column; duplicate keys, unsupported syntax and bounded-input violations fail.
+  Project fixtures and a small pinned MIT-licensed upstream selection cover supported
+  cases and profile rejections. Full YAML syntax/conformance is not claimed; multiline
+  flow/plain/quoted scalars, explicit indentation indicators, directives, anchors,
+  aliases, tags and complex keys remain outside the profile. See README.md.
 - Implement embedded/separate config, provenance, precedence, and config resolution.
 
 Gate: equivalent JSON/YAML trees and configs yield equivalent canonical documents;

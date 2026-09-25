@@ -20,6 +20,10 @@ test('browser server serves HTML and modules but not project metadata', async t 
   assert.equal(mission.status, 200);
   assert.match(mission.headers.get('content-type'), /application\/json/);
   assert.equal((await mission.json()).kind, 'tree');
+  const yamlMission = await fetch(`${url}/examples/browser/mission.yaml`);
+  assert.equal(yamlMission.status, 200);
+  assert.match(yamlMission.headers.get('content-type'), /application\/yaml/);
+  assert.match(await yamlMission.text(), /format: bhtrees-example/);
   const module = await fetch(`${url}/dist/index.js`);
   assert.match(module.headers.get('content-type'), /javascript/);
   assert.equal((await fetch(`${url}/package.json`)).status, 404);

@@ -1,6 +1,19 @@
 import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, delay, timeout, cooldown, subtree, parallel, createRegistry, encodeTree, decodeTree, toTreeDocument, fromTreeDocument, encodeValue, decodeValue, toPortableValue, fromPortableValue, createBlackboard, createRunner, SUCCESS, RUNNING } from 'bhtrees';
 import type { ActionImplementation, ActionContext, Clock, NodeDefinition, RunnerSnapshot, WaitDescriptor } from 'bhtrees';
 import type { NodeFactory, NodeFactoryOptions, CreateNodeOptions } from 'bhtrees';
+import { parseYaml, stringifyYaml, YamlError } from 'bhtrees';
+import type { YamlValue } from 'bhtrees';
+
+const yamlData: YamlValue = parseYaml('name: rover');
+const yamlText: string = stringifyYaml(yamlData);
+const yamlTree = decodeTree(yamlText, { codec: 'yaml' });
+encodeTree(yamlTree, { codec: 'yaml' });
+decodeValue(encodeValue({ example: true }, { codec: 'yaml' }), { codec: 'yaml' });
+const yamlError = new YamlError(1, 2, 'example');
+const yamlLine: number = yamlError.line;
+void yamlLine;
+// @ts-expect-error Only the built-in JSON and YAML codecs are available.
+decodeTree(yamlText, { codec: 'xml' });
 
 const factoryRegistry = createRegistry();
 const factory: NodeFactory = { version: 2, migrations: { 1: data => ({ value: data }) },

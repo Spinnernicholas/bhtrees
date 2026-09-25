@@ -17,8 +17,10 @@
     </div>
     <p>Reset returns to idle. Pause freezes simulation time; Continue resumes. Step advances one tree transition; running actions advance the simulation by 0.1 seconds.</p>
     <div class="inputs"><label>Your name <input id="name" value="Explorer" maxlength="60"></label>
+      <label>Mission format <select id="mission-format"><option value="json">JSON</option><option value="yaml">YAML</option></select></label>
       <button id="signal">Send radar ping</button>
       </div>
+    <p>Changing mission format reloads the page and starts a fresh mission.</p>
   </section>
   <section class="simulation" aria-label="Game simulation"><div class="tree-toolbar"><h2>Crystal valley</h2><span class="legend">Crystals · Rover · Base</span></div>
     <div id="world" role="img" aria-label="Rover traveling between its base and three crystal deposits">

@@ -6,7 +6,9 @@ registry.registerAction('example.greet', greet);
 const tree = sequence({ id: 'root', steps: [
   { node: action({ id: 'greet', ...greet }), input: { path: ['input', 'name'] } }
 ] });
-const json = encodeTree(tree, { registry });
-console.log(json);
-const loaded = decodeTree(json, { registry });
-console.log(createRunner(loaded, { input: { name: 'portable trees' } }).tick().output);
+for (const codec of ['json', 'yaml']) {
+  const text = encodeTree(tree, { registry, codec });
+  console.log(text);
+  const loaded = decodeTree(text, { registry, codec });
+  console.log(createRunner(loaded, { input: { name: 'portable trees' } }).tick().output);
+}

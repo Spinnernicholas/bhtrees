@@ -52,7 +52,7 @@ export function secondsUntilArrival(world) {
   return Math.hypot(world.destination.x - world.x, world.destination.y - world.y) / world.speed;
 }
 
-export function createMission(world, json, log = () => {}) {
+export function createMission(world, text, log = () => {}, codec = 'json') {
   function cancel() {
     world.destination = null;
     world.speed = 0;
@@ -114,7 +114,7 @@ export function createMission(world, json, log = () => {}) {
     return ctx.success({ agent: ctx.input?.name, delivered: world.delivered, mission: 'complete' });
   }
 
-  // These names are the implementation fields in mission.json.
+  // These names are the implementation fields in mission.json and mission.yaml.
   const registry = createRegistry();
   registry.registerAction('game.scan', { tick: scan, cancel });
   registry.registerAction('game.outbound', { tick: ctx => travel(ctx, ctx.input, 'Travel to crystal'), cancel });
@@ -126,5 +126,5 @@ export function createMission(world, json, log = () => {}) {
   registry.registerCondition('game.harvestComplete', () =>
     world.crystals.every(crystal => !crystal.remaining) && world.cargo === 0 && world.destination === null);
 
-  return loadMissionTree(json, registry);
+  return loadMissionTree(text, registry, codec);
 }

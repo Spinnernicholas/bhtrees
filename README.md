@@ -37,7 +37,10 @@ Run `npm run example:browser`, then open **http://127.0.0.1:8080** in a modern b
 The server binds to localhost only. Set `PORT` to use another port. Use the HTTP
 server instead of opening the HTML as a local file, so ES-module imports work.
 
-The playground fetches `examples/browser/mission.json` at startup. Its nested
+The playground fetches `examples/browser/mission.json` at startup. The **Mission
+format** selector switches to `mission.yaml` by reloading with `?format=yaml`;
+switching starts a fresh mission. Both files define the same initial mission,
+but edits are independent. Its nested
 example format keeps children and editable labels together; `mission-loader.js`
 translates it into the library's standard tree document using the registry in
 `game.js`. See the [editing guide](examples/browser/README.md).
@@ -467,12 +470,56 @@ cycles, and unreachable definitions fail validation. Implementation versions mus
 match exactly for `registerAction`/`registerCondition`; custom factories support the
 explicit data migrations described below. Limits are 10,000 nodes,
 128 child-reference edges in a path, and 1,000,000 characters for JSON text. JSON
-parsing uses the platform parser; this is not a YAML codec.
+parsing uses the platform parser. Select `{ codec: 'yaml' }` for the owned YAML
+codec described below; JSON remains the default.
 
 Run `npm run build`, then `node examples/documents.js` for a complete example.
 Tree documents support registered action/condition implementations and custom
-factories with data migrations. YAML,
-configuration documents, checkpoints, and recordings remain planned.
+factories with data migrations. Configuration documents, checkpoints, and
+recordings remain planned.
+
+## YAML application profile
+
+`encodeTree`/`decodeTree` and `encodeValue`/`decodeValue` accept
+`{ codec: 'yaml', registry }`. They use the same canonical documents and portable
+value envelopes as JSON. Choose the codec explicitly; input is not autodetected.
+`parseYaml(text)` and `stringifyYaml(value)` are also available for plain data.
+Run `npm run build`, then `node examples/documents.js` for both tree formats.
+
+The dependency-free parser implements a **limited YAML 1.2 application profile**,
+not full YAML conformance. It supports block mappings/sequences (including compact
+sequence entries), single-line flow collections, comments, single-line quoted/plain
+scalars, and literal/folded block strings (`|`, `>`, with `-`/`+` chomping).
+Optional `---` and `...` markers must occupy their own lines. Only one document is
+accepted. Input may use LF, CRLF, CR, and an initial BOM.
+
+Mappings require string keys and decode to null-prototype records. Quote keys such
+as `"true"` or `"42"` to prevent scalar resolution. Empty values and `null`/`Null`/
+`NULL`/`~` become null; the three conventional case forms of true/false become
+booleans. Decimal/exponent numbers and unsigned `0x`/`0o` numbers become JavaScript
+numbers. Dates and words such as `yes` and `on` stay strings. Nonfinite numbers and
+negative zero are rejected. Double quotes accept YAML escapes, including Unicode;
+single quotes escape an apostrophe by doubling it.
+
+This first profile rejects anchors/aliases, tags, merge keys, directives, complex
+or non-string keys, indentless sequences, explicit block indentation indicators,
+multiline flow collections, and multiline plain/quoted scalars. Use `|` or `>` for
+multiline text. Duplicate keys, invalid indentation, and unsupported syntax produce
+`YamlError` with one-based `line` and `column`. Subsequent canonical document/value
+validation still uses `DocumentError` field paths.
+
+The writer emits block YAML and quotes every string/key, escaping multiline strings
+inside double quotes. It preserves supported data values, not comments, source style,
+object identity, or prototypes. It rejects cycles, getters, sparse arrays, extra
+array properties, symbols, functions, undefined, and unregistered class instances;
+use the portable value APIs and codecs for custom application types. Limits are
+1,000,000 text characters, 128 nesting levels, and 100,000 visited values (including
+mapping keys). The parser/writer have no Node or browser dependencies.
+
+The profile follows the [YAML 1.2.2 specification](https://yaml.org/spec/1.2.2/).
+Tests include project fixtures and a small licensed, pinned selection from the
+[YAML test suite](https://github.com/yaml/yaml-test-suite); unsupported-profile
+cases are tested as explicit rejections, not counted as full conformance.
 
 ## Custom values and migrations
 
@@ -729,7 +776,7 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
-Not implemented yet: YAML, non-tree documents,
+Not implemented yet: full YAML syntax beyond the documented profile, non-tree documents,
 configuration and extensions, debugger controller/UI, recordings/checkpoints,
 standalone bundles or environment adapters. The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.

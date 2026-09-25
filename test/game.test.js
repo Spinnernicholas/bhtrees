@@ -1,10 +1,27 @@
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
-import { createRunner, RUNNING, SUCCESS } from '../dist/index.js';
+import { createRunner, parseYaml, RUNNING, SUCCESS } from '../dist/index.js';
 import { createWorld, advanceWorld, createMission, secondsUntilArrival } from '../examples/browser/game.js';
 
 const missionJSON = await readFile(new URL('../examples/browser/mission.json', import.meta.url), 'utf8');
+const missionYAML = await readFile(new URL('../examples/browser/mission.yaml', import.meta.url), 'utf8');
+
+test('YAML mission matches JSON and completes all expeditions', () => {
+  assert.deepEqual(JSON.parse(JSON.stringify(parseYaml(missionYAML))), JSON.parse(missionJSON));
+  const world = createWorld();
+  const mission = createMission(world, missionYAML, () => {}, 'yaml');
+  assert.deepEqual(mission.labels, createMission(createWorld(), missionJSON).labels);
+  const runner = createRunner(mission.tree, { input: { name: 'YAML Scout' } });
+  runner.tick();
+  for (let i = 0; i < 600 && runner.snapshot().status === RUNNING; i++) {
+    advanceWorld(world, 0.1); runner.tick();
+  }
+  assert.equal(runner.snapshot().status, SUCCESS);
+  assert.deepEqual(runner.snapshot().output, { agent: 'YAML Scout', delivered: 3, mission: 'complete' });
+  assert.throws(() => createMission(createWorld(), 'root: [', () => {}, 'yaml'), /Flow collections/);
+  assert.throws(() => createMission(createWorld(), missionJSON, () => {}, 'xml'), /Unsupported mission format/);
+});
 
 test('world movement uses target and speed without running the behavior tree', () => {
   const world = createWorld();

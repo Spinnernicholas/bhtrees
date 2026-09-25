@@ -1,4 +1,5 @@
 import { DocumentError } from './document-error.js';
+import { parseYaml, stringifyYaml } from './yaml.js';
 export { DocumentError } from './document-error.js';
 import { attachValueRegistry, registerValueType, toPortableValue, fromPortableValue } from './values.js';
 import type { ValueCodec, PortableValue } from './values.js';
@@ -103,7 +104,7 @@ export interface TreeDocument {
   root: string;
   nodes: TreeNodeDocument[];
 }
-export interface SerializationOptions { registry?: TreeRegistry }
+export interface SerializationOptions { registry?: TreeRegistry; codec?: 'json' | 'yaml' }
 const MAX_DEPTH = 128, MAX_NODES = 10000, MAX_TEXT = 1000000;
 const builtinTypes = ['sequence', 'selector', 'parallel', 'inverter', 'forceSuccess', 'forceFailure', 'retry', 'repeat', 'delay', 'timeout', 'cooldown', 'subtree'];
 function fail(path: string, message: string): never { throw new DocumentError(path, message); }
@@ -337,11 +338,15 @@ function readTreeDocument(value: unknown, { registry }: SerializationOptions, ex
 }
 
 export function encodeTree(root: NodeDefinition, options: SerializationOptions = {}): string {
+  if (options.codec === 'yaml') return stringifyYaml(toTreeDocument(root, options));
+  if (options.codec !== undefined && options.codec !== 'json') fail('$codec', 'Unsupported codec');
   const text = JSON.stringify(toTreeDocument(root, options), null, 2);
   if (text.length > MAX_TEXT) fail('$', 'Document exceeds 1000000 characters');
   return text;
 }
 export function decodeTree(text: string, options: SerializationOptions = {}): NodeDefinition {
+  if (options.codec === 'yaml') return fromTreeDocument(parseYaml(text), options);
+  if (options.codec !== undefined && options.codec !== 'json') fail('$codec', 'Unsupported codec');
   if (typeof text !== 'string' || text.length > MAX_TEXT) fail('$', 'Expected JSON text of at most 1000000 characters');
   let document: unknown;
   try { document = JSON.parse(text); } catch (error) { fail('$', `Invalid JSON: ${(error as Error).message}`); }

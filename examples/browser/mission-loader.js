@@ -1,10 +1,13 @@
-import { fromTreeDocument } from '../../dist/index.js';
+import { fromTreeDocument, parseYaml } from '../../dist/index.js';
 
 // The example nests nodes for editing; the library's interchange format uses ID references.
-export function loadMissionTree(json, registry) {
+export function loadMissionTree(text, registry, codec = 'json') {
   let source;
-  try { source = JSON.parse(json); }
-  catch (error) { throw new TypeError(`Invalid JSON: ${error.message}`); }
+  if (codec === 'yaml') source = parseYaml(text);
+  else if (codec === 'json') {
+    try { source = JSON.parse(text); }
+    catch (error) { throw new TypeError(`Invalid JSON: ${error.message}`); }
+  } else throw new TypeError(`Unsupported mission format: ${codec}`);
   if (source?.format !== 'bhtrees-example' || source.version !== 1 || source.kind !== 'tree') {
     throw new TypeError('Expected a version 1 bhtrees-example tree');
   }

@@ -57,7 +57,7 @@ try {
   const restoredDate = decodeValue(encodeValue(date, { registry }), { registry });
   check(restoredDate instanceof Date && restoredDate.getTime() === date.getTime(), 'Custom value round trip failed');
   await until(() => frame.contentDocument?.querySelector('#history li'), 'Application did not initialize');
-  const doc = frame.contentDocument;
+  let doc = frame.contentDocument;
   check(frame.contentWindow.getComputedStyle(doc.querySelector('.playground')).display === 'grid', 'Stylesheet did not load');
   for (const [width, height] of [[1366, 768], [1024, 600], [390, 844]]) {
     frame.style.width = `${width}px`;
@@ -151,6 +151,21 @@ try {
   check(inspection().status === 'SUCCESS' && inspection().output.delivered === 3,
     'Stepping did not complete the mission');
   check(inspection().frames.length === 0 && inspection().queuedResumes === 0, 'Stepping leaked resources');
+  for (const format of ['yaml', 'json']) {
+    get('mission-format').value = format;
+    get('mission-format').dispatchEvent(new frame.contentWindow.Event('change'));
+    await until(() => frame.contentDocument !== doc && frame.contentDocument?.getElementById('inspection')?.textContent,
+      `${format} mission did not initialize after switching`);
+    doc = frame.contentDocument;
+    check(get('mission-format').value === format && !get('mission-format').disabled, 'Mission format selection was not retained');
+    check(inspection().status === 'idle', 'Changing format did not start a fresh mission');
+    check(doc.getElementById('history').textContent.includes(`Loaded mission.${format}`), 'Wrong mission source loaded');
+    if (format === 'yaml') {
+      click('start'); click('pause');
+      for (let i = 0; i < 1000 && inspection().status === 'RUNNING'; i++) click('step');
+      check(inspection().status === 'SUCCESS' && inspection().output.delivered === 3, 'YAML mission did not complete');
+    }
+  }
   document.body.dataset.result = 'pass';
   document.getElementById('result').textContent = 'PASS: layout, start/reset, frozen pause, resume, mission and cleanup';
 } catch (error) {
