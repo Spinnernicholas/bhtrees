@@ -469,7 +469,8 @@ reactive interruption, parallel results, repeat budgets, and runs without a blac
   registries/services, setup rollback and reverse disposal. Configured tree loading
   installs extension implementations before binding nodes and cancels managed runners
   before cleanup. Node filesystem/package resolution and shared timer scheduling
-  are now implemented; browser/Adventure Land loading and declarative option schemas remain pending.
+  are now implemented; browser URL loading is also implemented. Adventure Land
+  integration and declarative option schemas remain pending.
   Debugger settings and live reconfiguration await their runtime implementations.
 
 Gate: equivalent JSON/YAML trees and configs yield equivalent canonical documents;
@@ -488,10 +489,15 @@ and configuration precedence have fixture-based coverage.
   disabled entries, policy rejection and disposal. No runtime dependencies were added.
 - Add dependency ordering, option validation, rollback, and capability inspection.
 - Implement Node, browser, and Adventure Land loading/scheduling adapters.
+  Added `bhtrees/browser` for HTTP(S) document loading and native ESM imports, explicit
+  catalog bases, host name/module resolution, fetch/module policies and abort cleanup.
+  Redirecting documents are rejected to retain unambiguous relative-path provenance.
+  Unit tests and a real Chrome smoke cover separate config loading, relative module
+  imports, execution and disposal. Adventure Land integration remains the next host task.
   Implemented a host-neutral timer scheduler with start/stop/dispose, injectable
   clocks, before/after tick hooks, pause-aware driving, terminal cleanup, and stale
   callback protection. The browser playground now uses it. Deterministic tests cover
-  lifecycle, queued completions, reentrant hooks and errors; browser/game loading and real
+  lifecycle, queued completions, reentrant hooks and errors; game loading and real
   Adventure Land validation remain pending.
 - Produce the standalone global distribution with bundled built-ins.
 

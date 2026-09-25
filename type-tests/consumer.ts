@@ -7,6 +7,11 @@ import { encodeConfig, decodeConfig, toConfigDocument, fromConfigDocument, resol
 import type { Configuration, ExtensionDeclaration, ResolvedExtension, ConfiguredTree, ConfigFileContent, TreeSerializationOptions } from 'bhtrees';
 import { createExtensionLoader } from 'bhtrees';
 import type { ExtensionManifest } from 'bhtrees';
+import { loadBrowserTree, createBrowserExtensionLoader, readBrowserConfig } from 'bhtrees/browser';
+const browserTree: Promise<ConfiguredTree> = loadBrowserTree('./mission.yaml', { baseURI: 'https://example.test/app/' });
+const browserConfig: Promise<ConfigFileContent> = readBrowserConfig('https://example.test/config.json');
+createBrowserExtensionLoader({ baseURI: 'https://example.test/', catalog: { plugin: './plugin.js' } });
+void browserTree; void browserConfig;
 import { createNodeExtensionLoader, loadNodeTree, toFileURI, readNodeConfig } from 'bhtrees/node';
 const nodeLoader = createNodeExtensionLoader({ baseURI: new URL('file:///app/mission.json'), packages: { plugin: 'example-plugin' } });
 const nodeTree: Promise<ConfiguredTree> = loadNodeTree('./mission.yaml', { extensionLoader: nodeLoader });

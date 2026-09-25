@@ -6,6 +6,12 @@ async function until(predicate, message) {
   throw new Error(message);
 }
 try {
+  const { loadBrowserTree } = await import('../../dist/browser.js');
+  const loaded = await loadBrowserTree('./loading/mission.yaml', { baseURI: import.meta.url });
+  check(loaded.createRunner({ input: { name: 'Browser' } }).tick().output === 'Hello, Browser!',
+    'Browser adapter failed to fetch tree/config and import extension');
+  await loaded.dispose();
+  check(loaded.extensionSnapshot()[0].status === 'disposed', 'Browser extension did not dispose');
   const { inverter, condition, createRunner, action, sequence, subtree, parallel, createRegistry, encodeTree, decodeTree, encodeValue, decodeValue, RUNNING, SUCCESS } = await import('../../dist/index.js');
   const { mountTreeView } = await import('./tree-view.js');
   const target = document.createElement('ol');

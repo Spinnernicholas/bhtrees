@@ -984,6 +984,47 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
+## Browser URL loading
+
+```js
+import { loadBrowserTree } from './dist/browser.js'; // package: bhtrees/browser
+
+const loaded = await loadBrowserTree('./mission.yaml', { baseURI: import.meta.url });
+try {
+  console.log(loaded.createRunner({ input: { name: 'Browser' } }).tick());
+} finally {
+  await loaded.dispose();
+}
+```
+
+`bhtrees/browser` fetches HTTP(S) tree/config documents and dynamically imports
+extension modules. Relative and origin-relative tree URLs require an explicit
+`baseURI`; no `location` or DOM globals are read. Config and extension paths resolve
+against their declaring documents. JSON/YAML codecs are inferred from URL pathname
+extensions; query strings are supported, and an explicit tree `codec` overrides
+inference. Credentials embedded in URLs and fragments are rejected. Documents must
+use canonical URLs without redirects, so relative paths and provenance remain stable.
+
+Pass `extensions: { catalog: { combat: './combat.js' } }` to map extension names to
+URLs relative to the tree, or provide `extensions.baseURI` for a separate catalog
+base. Built-in manifests and manifest-valued catalog entries are also supported.
+`createBrowserExtensionLoader` exposes the same setup separately, with optional
+`resolveName(name)` and `importModule(uri)` host callbacks. There is no implicit npm
+lookup in browsers. Native imports follow browser CORS/CSP and module-cache rules.
+
+`allowDocument(uri)` can reject a tree/config fetch, while `extensions.allowModule(uri)`
+can reject direct extension imports. These hooks do not sandbox code or govern
+transitive imports. An injected `fetch` and `readBrowserConfig` support custom hosts
+and tests; fetch implementations must honor `redirect: 'error'`. A custom `readConfig`
+or `extensionLoader` replaces the corresponding default behavior and policies.
+
+An optional `signal` aborts document fetches. Native module imports and extension
+setup cannot be interrupted; if the signal aborts during successful setup, the
+loader disposes the resulting tree/session before rejecting. After loading finishes,
+use `loaded.dispose()` to release the session; the signal does not control its lifetime.
+The Chrome smoke test loads `examples/browser/loading/mission.yaml`, follows its
+separate JSON config, imports its extension, executes it, and verifies disposal.
+
 ## Node file and extension loading
 
 ```js
@@ -1056,5 +1097,5 @@ The browser playground demonstrates simulation advancement in `beforeTick`.
 
 Not implemented yet: full YAML syntax beyond the documented profile, debugger
 configuration, debugger controller/UI, recordings/checkpoints,
-standalone bundles or browser/Adventure Land loading adapters. The engine uses standard host timers by default and no DOM or game
+standalone bundles or an Adventure Land adapter. The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.
