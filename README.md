@@ -1037,7 +1037,9 @@ count of older events dropped by the controller. Events are captured in the runt
 so several transitions between polls remain visible within the retention limit.
 The remote UI offers entry breakpoints, including input-value conditions, through its
 breakpoint form; clicking a tree node fills in its node ID. The current hit and its
-activation ID appear beside the execution status. Step-over/out, resume/completion/error
+activation ID appear beside the execution status. Step-over/out controls show why a
+bounded command stopped; activation buttons select a specific shared-node invocation.
+Resume/completion/error
 breakpoints, watchpoints, historical state/profiling, multiple runners and reusable list/block
 renderer components remain pending. HTTP tests cover controls and access checks; a
 Chrome smoke test verifies the served UI connects and displays the runtime.
@@ -1058,7 +1060,7 @@ scheduler.start();
 
 This initial local client exposes protocol `version: 1`, a `capabilities` list,
 `snapshot()`, `subscribe()`, `command()`, and `refresh()`. Commands support `pause`,
-`continue`, `stepInto`, `tick`, `cancel` (optional string `reason`), and `select`
+`continue`, `stepInto`, `stepOver`, `stepOut`, `tick`, `cancel` (optional string `reason`), and `select`
 (`activationId` or `null`). Selection refers to a live activation and clears when it
 leaves execution. Commands return `{ ok: true, snapshot }` or
 `{ ok: false, code, message }`; unknown fields, unsupported commands, and invalid
@@ -1081,8 +1083,34 @@ runner or its scheduler; the wrapper remains usable for execution. Host owners m
 release those resources separately. The browser playground now uses this client for
 execution controls and rendering notifications.
 
-Step-over/out, additional breakpoint kinds, watchpoints, recordings, checkpoints, and reusable
+Additional breakpoint kinds, watchpoints, recordings, checkpoints, and reusable
 debugger renderers remain pending. The Node HTTP transport is described above.
+
+### Step over and step out
+
+Both commands require paused execution and a live activation. Select one with
+`{ type: 'select', activationId }`; without a live selection, the deepest activation
+on the current traversal is used. Use `stepInto` to initialize an idle runner first.
+
+- `stepOver` advances until the selected activation leaves execution, including its
+  subtree, without proceeding to that activation's next sibling.
+- `stepOut` uses the selected activation's parent as the target, advancing through
+  the rest of that parent's subtree. The root has no parent, so stepping out of it
+  is rejected. These are activation-based operations, not JavaScript source stepping.
+
+Each command stays paused and performs at most `stepBudget` single-transition drives
+(default 1000; configurable from 1 to 10000 in `createDebugger`). It may stop early
+for an entry breakpoint, terminal result, lack of progress, or a running/waiting frame
+on the current traversal. It does not wait for real time or spin a RUNNING action.
+After external work settles, issue another step command or Continue. Work elsewhere
+in a parallel/reactive traversal may execute as required by normal engine ordering.
+
+Snapshots and remote state expose `stepResult`, containing the command, target
+activation ID, transitions executed and stop reason: `target-left`, `blocked`,
+`budget`, `breakpoint`, or `terminal`. `target-left` means the activation is no longer
+live, whether completed or interrupted; it does not imply success. These drives do
+not increment logical tick counters. Continue, tick, cancel or another step clears
+the previous report. A stopped command is not automatically resumed in the background.
 
 ### Entry breakpoints
 

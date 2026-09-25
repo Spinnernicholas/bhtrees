@@ -68,6 +68,10 @@ test('remote clients install, hit and remove entry breakpoints', async t => {
   assert.equal(stopped.breakpointHit.nodeId, 'running');
   assert.equal(stopped.breakpoints.length, 1);
   assert.equal(stopped.snapshot.runner.frames.find(frame => frame.nodeId === 'running').phase, 'enter');
+  await remote.command({ type: 'stepOver' });
+  const stepped = await remote.read();
+  assert.equal(stepped.stepResult.reason, 'blocked');
+  assert.equal(stepped.stepResult.targetActivationId, stopped.breakpointHit.activationId);
   await remote.command({ type: 'removeBreakpoint', nodeId: 'running' });
   await remote.command({ type: 'continue' }); await remote.command({ type: 'tick' });
   assert.equal((await remote.read()).breakpointHit, null);

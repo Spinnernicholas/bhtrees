@@ -541,7 +541,11 @@ Run browser and Adventure Land smoke examples in their real host environments.
   conditions. Continue/step passes a held boundary once; shared/repeated activations
   hit independently. Validated set/remove commands, hit inspection and remote form
   controls are implemented and tested. Unknown node IDs are allowed for later matching.
-  Resume/completion/error breakpoints and step-over/out remain next.
+  Added bounded activation-based step-over/out: over targets the selected activation,
+  out its parent, with breakpoint/blocked/terminal/budget stop reports. Both remain
+  paused and preserve logical tick counters. Remote controls and per-activation
+  selection are implemented; tests cover nested/parallel scopes, waits and budgets.
+  Resume/completion/error breakpoints and watchpoints remain next.
 - Add bounded recording, historical snapshots, checkpoint capability checks/restore hooks.
 - Implement local and Node remote transports, reconnect, and resynchronization.
   Implemented the first Node-hosted browser debugger: loopback-only HTTP server,

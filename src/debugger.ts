@@ -19,10 +19,17 @@ export interface DebugEventSummary {
   readonly reason?: string;
 }
 
-export type DebugCommand = { type: 'pause' | 'continue' | 'stepInto' | 'tick' } |
+export interface DebugStepResult {
+  readonly command: 'stepOver' | 'stepOut';
+  readonly targetActivationId: number;
+  readonly transitions: number;
+  readonly reason: 'target-left' | 'blocked' | 'budget' | 'breakpoint' | 'terminal';
+}
+export type DebugCommand = { type: 'pause' | 'continue' | 'stepInto' | 'stepOver' | 'stepOut' | 'tick' } |
   { type: 'cancel'; reason?: string } | { type: 'select'; activationId: number | null } |
   ({ type: 'setBreakpoint' } & EntryBreakpoint) | { type: 'removeBreakpoint'; nodeId: string };
 export interface DebugSnapshot {
+  readonly stepResult: DebugStepResult | null;
   readonly breakpoints: readonly EntryBreakpoint[];
   readonly breakpointHit: { readonly nodeId: string; readonly activationId: number } | null;
   readonly events: readonly DebugEventSummary[];
@@ -36,6 +43,8 @@ export interface DebugSnapshot {
 export type DebugCommandResult = { readonly ok: true; readonly snapshot: DebugSnapshot } |
   { readonly ok: false; readonly code: 'INVALID_COMMAND' | 'INVALID_STATE' | 'BUSY' | 'DISPOSED' | 'EXECUTION_ERROR'; readonly message: string };
 export interface DebuggerOptions {
+  /** Maximum drives in one step-over/out command; default 1000, maximum 10000. */
+  stepBudget?: number;
   /** Retained metadata events; default 200, maximum 10000, zero disables collection. */
   eventLimit?: number;
   /** Observer errors are isolated from execution and other observers. */
@@ -58,10 +67,13 @@ export interface DebuggerClient {
 /** Local version-1 client. Snapshots are live inspection data, not historical copies. */
 export function createDebugger(source: Runner, options: DebuggerOptions = {}): DebuggerClient {
   const eventLimit = options.eventLimit ?? 200;
+  const stepBudget = options.stepBudget ?? 1000;
+  if (!Number.isInteger(stepBudget) || stepBudget < 1 || stepBudget > 10000) throw new RangeError('Invalid debugger step budget');
   if (!Number.isInteger(eventLimit) || eventLimit < 0 || eventLimit > 10000) throw new RangeError('Invalid debugger event limit');
   const events: DebugEventSummary[] = [];
   const breakpoints = new Map<string, EntryBreakpoint>();
   let breakpointHit: DebugSnapshot['breakpointHit'] = null;
+  let stepResult: DebugStepResult | null = null;
   let droppedEvents = 0;
   const unsubscribeEvents = eventLimit ? source.subscribe(event => {
     events.push(Object.freeze({ sequence: event.sequence, type: event.type, nodeId: event.nodeId,
@@ -95,7 +107,7 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
     const selection = runner.frames.find(frame => frame.activationId === selected) ?? null;
     if (!selection) selected = null;
     return Object.freeze({ version: 1, revision, runner, selectedActivationId: selected, selection,
-      events: Object.freeze([...events]), droppedEvents, breakpoints: Object.freeze([...breakpoints.values()]), breakpointHit });
+      events: Object.freeze([...events]), droppedEvents, breakpoints: Object.freeze([...breakpoints.values()]), breakpointHit, stepResult });
   }
   let current = capture();
   function notify(listener: (snapshot: DebugSnapshot) => void): void {
@@ -122,19 +134,36 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
   const runner: Runner = Object.freeze({
     beforeEnter: (listener: (boundary: RunnerEntryBoundary) => boolean | void) => source.beforeEnter(listener),
     subscribe: (listener: (event: RunnerEvent) => void) => source.subscribe(listener),
-    tick: () => drive(() => source.tick()),
-    step: () => drive(() => { breakpointHit = null; return source.step(); }),
+    tick: () => drive(() => { stepResult = null; return source.tick(); }),
+    step: () => drive(() => { stepResult = null; breakpointHit = null; return source.step(); }),
     pause: () => drive(() => source.pause()),
-    continue: () => drive(() => source.continue()),
-    cancel: (reason?: string) => drive(() => source.cancel(reason)),
+    continue: () => drive(() => { stepResult = null; source.continue(); }),
+    cancel: (reason?: string) => drive(() => { stepResult = null; return source.cancel(reason); }),
     snapshot: () => source.snapshot()
   });
   function failure(code: Extract<DebugCommandResult, { ok: false }>['code'], message: string): DebugCommandResult {
     return Object.freeze({ ok: false, code, message });
   }
+  function advance(command: 'stepOver' | 'stepOut', target: number): void {
+    const initial = source.snapshot().transitions;
+    let reason: DebugStepResult['reason'] = 'budget';
+    breakpointHit = null;
+    for (let count = 0; count < stepBudget; count++) {
+      const before = source.snapshot().transitions;
+      const state = source.step();
+      if (breakpointHit) { reason = 'breakpoint'; break; }
+      if (!['idle', 'RUNNING'].includes(state.status)) { reason = 'terminal'; break; }
+      if (!state.frames.some(frame => frame.activationId === target)) { reason = 'target-left'; break; }
+      // Do not spin waiting for external work or repeatedly tick a RUNNING action.
+      if (state.transitions === before || state.frames.some(frame => frame.onTraversal && ['running', 'waiting'].includes(frame.phase))) {
+        reason = 'blocked'; break;
+      }
+    }
+    stepResult = Object.freeze({ command, targetActivationId: target, transitions: source.snapshot().transitions - initial, reason });
+  }
   return Object.freeze({
     version: 1,
-    capabilities: Object.freeze(['pause', 'continue', 'stepInto', 'tick', 'cancel', 'select', 'setBreakpoint', 'removeBreakpoint'] as const),
+    capabilities: Object.freeze(['pause', 'continue', 'stepInto', 'stepOver', 'stepOut', 'tick', 'cancel', 'select', 'setBreakpoint', 'removeBreakpoint'] as const),
     runner,
     snapshot: () => current,
     subscribe(listener: (snapshot: DebugSnapshot) => void) {
@@ -160,7 +189,7 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
           return failure('INVALID_COMMAND', 'Expected string-keyed command data');
         }
         const type = fields.type?.value;
-        if (typeof type !== 'string' || !['pause', 'continue', 'stepInto', 'tick', 'cancel', 'select', 'setBreakpoint', 'removeBreakpoint'].includes(type)) return failure('INVALID_COMMAND', 'Unknown command type');
+        if (typeof type !== 'string' || !['pause', 'continue', 'stepInto', 'stepOver', 'stepOut', 'tick', 'cancel', 'select', 'setBreakpoint', 'removeBreakpoint'].includes(type)) return failure('INVALID_COMMAND', 'Unknown command type');
         const allowed = type === 'cancel' ? ['type', 'reason'] : type === 'select' ? ['type', 'activationId'] :
           type === 'setBreakpoint' ? ['type', 'nodeId', 'inputPath', 'equals'] : type === 'removeBreakpoint' ? ['type', 'nodeId'] : ['type'];
         if (Object.keys(fields).some(key => !allowed.includes(key))) return failure('INVALID_COMMAND', 'Unknown command field');
@@ -194,6 +223,14 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
           return failure('INVALID_COMMAND', 'Expected a positive activation ID or null');
         }
         const state = source.snapshot();
+        let stepTarget: number | undefined;
+        if (type === 'stepOver' || type === 'stepOut') {
+          if (!state.paused) return failure('INVALID_STATE', 'Pause before step-over/out');
+          const frame = state.frames.find(frame => frame.activationId === selected) ?? state.frames.filter(frame => frame.onTraversal).at(-1);
+          if (!frame) return failure('INVALID_STATE', 'No live activation; use stepInto to initialize execution');
+          stepTarget = type === 'stepOver' ? frame.activationId : frame.parentActivationId ?? undefined;
+          if (stepTarget === undefined) return failure('INVALID_STATE', 'The root activation has no parent to step out of');
+        }
         if (type === 'select') {
           if (activationId !== null && !state.frames.some(frame => frame.activationId === activationId)) return failure('INVALID_STATE', 'Activation is not live');
         } else if (type !== 'setBreakpoint' && type !== 'removeBreakpoint') {
@@ -201,10 +238,12 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
           if (type === 'tick' && state.paused) return failure('INVALID_STATE', 'Continue before advancing a logical tick; use stepInto while paused');
         }
         drive(() => {
+          if (['continue', 'stepInto', 'tick', 'cancel', 'stepOver', 'stepOut'].includes(type)) stepResult = null;
           switch (type) {
             case 'pause': source.pause(); break;
             case 'continue': source.continue(); break;
             case 'stepInto': breakpointHit = null; source.step(); break;
+            case 'stepOver': case 'stepOut': advance(type, stepTarget!); break;
             case 'tick': source.tick(); break;
             case 'cancel': source.cancel(reason); break;
             case 'select': selected = activationId; break;

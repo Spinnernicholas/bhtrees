@@ -2,6 +2,7 @@ import type { DebugCommand, DebugEventSummary, EntryBreakpoint, DebugSnapshot } 
 import type { DebugValue } from './debug-wire.js';
 
 export interface RemoteDebugState {
+  stepResult: DebugSnapshot['stepResult'];
   breakpoints: readonly EntryBreakpoint[];
   breakpointHit: DebugSnapshot['breakpointHit'];
   events: readonly DebugEventSummary[];

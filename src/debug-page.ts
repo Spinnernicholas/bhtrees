@@ -9,7 +9,7 @@ export const debugPage = `<!doctype html>
 <label>Input path (JSON array, optional) <input id="breakpoint-path" placeholder='["mode"]'></label>
 <label>Equals (JSON scalar) <input id="breakpoint-value" placeholder='"combat"'></label>
 <button>Set breakpoint</button></form><ul id="breakpoints"></ul></section>
-<main><section><h2>Tree</h2><ul id="tree"></ul></section><section><h2>Inspection</h2><pre id="inspection"></pre></section></main>
+<main><section><h2>Tree</h2><ul id="tree"></ul></section><section><h2>Inspection</h2><div id="activation-controls"></div><pre id="inspection"></pre></section></main>
 <section><h2>Execution events</h2><label>Filter by node <input id="event-filter"></label><p id="event-count"></p><pre id="events"></pre></section>
 <script type="module" src="/view.js"></script></html>`;
 
@@ -19,7 +19,7 @@ history.replaceState(null, '', location.pathname);
 const client = createRemoteDebugger({ url: location.href, token });
 const byId = id => document.getElementById(id);
 let stopped = false, busy = false, selected = null, timer, lastRevision = -1;
-const names = { pause: 'Pause', continue: 'Continue', stepInto: 'Step into', tick: 'Tick', cancel: 'Cancel' };
+const names = { pause: 'Pause', continue: 'Continue', stepInto: 'Step into', stepOver: 'Step over', stepOut: 'Step out', tick: 'Tick', cancel: 'Cancel' };
 byId('breakpoint-form').onsubmit = event => {
   event.preventDefault();
   try {
@@ -45,6 +45,7 @@ function render(state) {
   byId('connection').textContent = 'Connected';
   byId('status').textContent = runner.status + (runner.paused ? ' · paused' : '') + ' · revision ' + snapshot.revision;
   if (state.breakpointHit) byId('status').textContent += ' · entry breakpoint: ' + state.breakpointHit.nodeId + ' [' + state.breakpointHit.activationId + ']';
+  if (state.stepResult) byId('status').textContent += ' · ' + state.stepResult.command + ': ' + state.stepResult.reason + ' after ' + state.stepResult.transitions + ' transitions';
   byId('breakpoints').replaceChildren();
   for (const breakpoint of state.breakpoints) {
     const item = document.createElement('li');
@@ -58,7 +59,7 @@ function render(state) {
     if (!state.capabilities.includes(type)) continue;
     const button = document.createElement('button'); button.textContent = label;
     button.dataset.command = type;
-    button.disabled = !['idle', 'RUNNING'].includes(runner.status) || type === 'tick' && runner.paused;
+    button.disabled = !['idle', 'RUNNING'].includes(runner.status) || type === 'tick' && runner.paused || ['stepOver', 'stepOut'].includes(type) && !runner.paused;
     button.onclick = () => command({ type }); byId('controls').append(button);
   }
   const nodes = new Map(state.definition.nodes.map(node => [node.id, node]));
@@ -71,7 +72,10 @@ function render(state) {
     const frames = live.filter(frame => frame.nodeId === id);
     const button = document.createElement('button'); button.textContent = node.id + ' · ' + node.type + ' · ' + (frames.map(f => f.phase).join(', ') || (id === state.definition.root ? runner.status : 'inactive'));
     button.className = frames.length ? 'active' : '';
-    button.onclick = () => { selected = id; byId('breakpoint-node').value = id; render(state); };
+    button.onclick = () => { selected = id; byId('breakpoint-node').value = id;
+      if (frames.length === 1) command({ type: 'select', activationId: frames[0].activationId });
+      else { command({ type: 'select', activationId: null }); render(state); }
+    };
     item.append(button);
     const children = document.createElement('ul');
     for (const child of node.children) { if (count >= 2000) break; children.append(branch(child, new Set([...path, id]), depth + 1)); }
@@ -79,6 +83,13 @@ function render(state) {
   }
   byId('tree').replaceChildren(branch(state.definition.root, new Set(), 0));
   byId('inspection').textContent = JSON.stringify(selected ? { definition: nodes.get(selected), activations: live.filter(frame => frame.nodeId === selected) } : runner, null, 2);
+  byId('activation-controls').replaceChildren();
+  for (const frame of live.filter(frame => frame.nodeId === selected)) {
+    const button = document.createElement('button');
+    button.textContent = 'Select activation ' + frame.activationId + (snapshot.selectedActivationId === frame.activationId ? ' (selected)' : '');
+    button.onclick = () => command({ type: 'select', activationId: frame.activationId });
+    byId('activation-controls').append(button);
+  }
   const filter = byId('event-filter').value;
   byId('event-count').textContent = state.events.length + ' retained; ' + state.droppedEvents + ' older events dropped';
   byId('events').textContent = state.events.filter(event => event.nodeId.includes(filter)).map(event =>

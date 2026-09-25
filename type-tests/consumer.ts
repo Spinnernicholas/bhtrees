@@ -25,8 +25,8 @@ const offExecutionEvents = debugClient.runner.subscribe(event => {
 offExecutionEvents();
 const debugResult: DebugCommandResult = debugClient.command({ type: 'select', activationId: null });
 debugClient.subscribe((snapshot: DebugSnapshot) => { void snapshot.selection; });
-// @ts-expect-error Unsupported command is not advertised by the client.
 debugClient.command({ type: 'stepOver' });
+debugClient.command({ type: 'stepOut' });
 void debugResult;
 import { loadAdventureLandSession } from 'bhtrees/adventure-land';
 import type { AdventureLandSession } from 'bhtrees/adventure-land';

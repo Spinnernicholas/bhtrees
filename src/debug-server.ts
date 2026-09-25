@@ -65,7 +65,7 @@ export async function startDebuggerServer({ client, tree, port = 0 }: DebuggerSe
             frames: state.runner.frames, output: state.runner.output, error: state.runner.error, blackboard: state.runner.blackboard } };
         send(200, { version: 1, capabilities: client.capabilities, definition: { root: tree.id, nodes },
           snapshot: inspectDebugValue(snapshot), events: state.events, droppedEvents: state.droppedEvents,
-          breakpoints: state.breakpoints, breakpointHit: state.breakpointHit }); return;
+          breakpoints: state.breakpoints, breakpointHit: state.breakpointHit, stepResult: state.stepResult }); return;
       }
       if (path === '/api/command' && request.method === 'POST') {
         if (request.headers['content-type']?.split(';')[0] !== 'application/json') { send(415, { error: 'Expected JSON' }); return; }

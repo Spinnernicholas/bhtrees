@@ -1,7 +1,7 @@
 export { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, delay, timeout, cooldown, subtree, parallel, SUCCESS, FAILURE, RUNNING } from './nodes.js';
 export { createRunner } from './runner.js';
 export { createDebugger } from './debugger.js';
-export type { DebugCommand, DebugCommandResult, DebugSnapshot, DebuggerOptions, DebuggerClient, DebugEventSummary, EntryBreakpoint } from './debugger.js';
+export type { DebugCommand, DebugCommandResult, DebugSnapshot, DebuggerOptions, DebuggerClient, DebugEventSummary, EntryBreakpoint, DebugStepResult } from './debugger.js';
 export { createRunnerScheduler } from './scheduler.js';
 export type { RunnerScheduler, RunnerSchedulerOptions } from './scheduler.js';
 export type * from './types.js';
