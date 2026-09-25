@@ -1,0 +1,10 @@
+format: bhtrees
+version: 1
+kind: tree
+root: greet
+configFile: ./settings.yaml
+nodes:
+  - id: greet
+    type: action
+    implementation: greeting.run
+    implementationVersion: 1

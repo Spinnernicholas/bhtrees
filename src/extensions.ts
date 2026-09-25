@@ -28,6 +28,8 @@ export interface ExtensionLoaderOptions {
   /** Return a manifest or an ESM namespace with a default manifest. */
   importModule?: (uri: string) => unknown | Promise<unknown>;
   allowModule?: (uri: string) => boolean | Promise<boolean>;
+  /** Host fallback for names absent from built-ins and the explicit catalog. */
+  resolveName?: (name: string) => string | Promise<string>;
 }
 export interface ExtensionSnapshot {
   readonly id: string;
@@ -93,9 +95,10 @@ export function createExtensionLoader(options: ExtensionLoaderOptions = {}): Ext
     if (!nonempty(name) || builtins.has(name)) throw new TypeError(`Reserved or invalid catalog name: ${name}`);
     catalog.set(name, typeof value === 'string' ? absolute(value) : manifest(value));
   }
-  const { importModule, allowModule } = options;
+  const { importModule, allowModule, resolveName } = options;
   if (importModule !== undefined && typeof importModule !== 'function') throw new TypeError('Invalid module importer');
   if (allowModule !== undefined && typeof allowModule !== 'function') throw new TypeError('Invalid module policy');
+  if (resolveName !== undefined && typeof resolveName !== 'function') throw new TypeError('Invalid name resolver');
   const cache = new Map<string, Promise<Readonly<ExtensionManifest>>>();
   async function moduleAt(uri: string): Promise<Readonly<ExtensionManifest>> {
     if (allowModule && await allowModule(uri) !== true) throw new Error('Module denied by host policy');
@@ -126,7 +129,8 @@ export function createExtensionLoader(options: ExtensionLoaderOptions = {}): Ext
           if (declaration.path !== undefined) loaded = await moduleAt(declaration.path);
           else {
             const builtin = builtins.get(declaration.name!);
-            const target = builtin ?? catalog.get(declaration.name!);
+            const target = builtin ?? catalog.get(declaration.name!) ??
+              (resolveName ? absolute(await resolveName(declaration.name!)) : undefined);
             if (!target) throw new Error(`Unknown extension name: ${declaration.name}`);
             if (builtin) location = `builtin:${declaration.name}`;
             if (typeof target === 'string') { location = target; loaded = await moduleAt(target); }

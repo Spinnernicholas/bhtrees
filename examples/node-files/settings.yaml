@@ -1,0 +1,6 @@
+format: bhtrees
+version: 1
+kind: config
+config:
+  extensions:
+    - path: ./greeting.js

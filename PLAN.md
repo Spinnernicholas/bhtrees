@@ -468,8 +468,8 @@ reactive interruption, parallel results, repeat budgets, and runs without a blac
   modules, cached manifests, dependency ordering, async option validation, isolated
   registries/services, setup rollback and reverse disposal. Configured tree loading
   installs extension implementations before binding nodes and cancels managed runners
-  before cleanup. Native host resolvers and declarative option schemas remain pending.
-  Shared timer scheduling is now implemented; filesystem/package resolution remains next.
+  before cleanup. Node filesystem/package resolution and shared timer scheduling
+  are now implemented; browser/Adventure Land loading and declarative option schemas remain pending.
   Debugger settings and live reconfiguration await their runtime implementations.
 
 Gate: equivalent JSON/YAML trees and configs yield equivalent canonical documents;
@@ -479,12 +479,19 @@ and configuration precedence have fixture-based coverage.
 ### Phase 4: Extension system and host adapters
 
 - Implement catalogs, named/package/path resolution, manifests, setup, and disposal.
+  Added a separate `bhtrees/node` entry point for file trees/configs, file URL imports,
+  and installed package resolution anchored to an explicit host/tree file. Built-ins
+  and catalog entries retain priority; missing names resolve lazily through a host
+  callback, including dependencies. Node lookup uses createRequire().resolve export
+  conditions; import-only packages require explicit file URL catalog entries.
+  Native I/O tests cover relative separate configs, encoded paths, installed packages,
+  disabled entries, policy rejection and disposal. No runtime dependencies were added.
 - Add dependency ordering, option validation, rollback, and capability inspection.
 - Implement Node, browser, and Adventure Land loading/scheduling adapters.
   Implemented a host-neutral timer scheduler with start/stop/dispose, injectable
   clocks, before/after tick hooks, pause-aware driving, terminal cleanup, and stale
   callback protection. The browser playground now uses it. Deterministic tests cover
-  lifecycle, queued completions, reentrant hooks and errors; native loading and real
+  lifecycle, queued completions, reentrant hooks and errors; browser/game loading and real
   Adventure Land validation remain pending.
 - Produce the standalone global distribution with bundled built-ins.
 

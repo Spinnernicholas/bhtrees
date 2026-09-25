@@ -984,6 +984,46 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
+## Node file and extension loading
+
+```js
+import { loadNodeTree } from 'bhtrees/node';
+
+const loaded = await loadNodeTree('./mission.yaml', {
+  extensions: { packages: { combat: '@my-game/combat-extension' } }
+});
+try {
+  const runner = loaded.createRunner();
+  console.log(runner.tick());
+} finally {
+  await loaded.dispose();
+}
+```
+
+`bhtrees/node` is a separate entry point; the main entry point stays browser-compatible.
+`loadNodeTree` accepts filesystem paths or file URLs, infers JSON/YAML from
+`.json`, `.yaml`, or `.yml`, and reads a referenced config relative to the tree.
+An explicit `codec` also permits other tree filename extensions. Extension paths
+remain relative to their declaring config/tree document. Disposal cancels managed
+runners before extension cleanup. See `examples/node-files.js` for a runnable example.
+
+`createNodeExtensionLoader({ baseURI, builtins, catalog, packages, allowModule })`
+can also be supplied to `loadConfiguredTree`. Built-ins and explicit catalog entries
+take precedence over package lookup. Unknown names use installed packages, with
+optional `packages` mappings from manifest IDs to package names/subpaths. Package
+lookup uses `createRequire(baseURI).resolve`, including its `require` export
+conditions; the selected file is then dynamically imported. Packages exposing only
+an `import` condition need an explicit file URL catalog entry. No packages are
+downloaded. Package lookup is relative to the host file (`loadNodeTree` uses the
+tree file), including dependencies declared by extensions. Disabled entries are
+not resolved. Manifests must still match the requested extension name.
+
+`allowModule(uri)` runs before direct module imports. It does not sandbox extension
+code or govern that code's own imports. Only file URLs are imported by this adapter.
+`readNodeConfig(uri)` and `toFileURI(pathOrURL)` are available separately, and custom
+`readConfig`/`extensionLoader` options can replace the defaults. Node type definitions
+are development-only dependencies; the library still has no runtime dependencies.
+
 ## Automatic runner scheduling
 
 ```js
@@ -1015,6 +1055,6 @@ Create one scheduler per runner and dispose it when the host view/session closes
 The browser playground demonstrates simulation advancement in `beforeTick`.
 
 Not implemented yet: full YAML syntax beyond the documented profile, debugger
-configuration, native package/filesystem extension adapters, debugger controller/UI, recordings/checkpoints,
-standalone bundles or environment-specific loading adapters. The engine uses standard host timers by default and no DOM or game
+configuration, debugger controller/UI, recordings/checkpoints,
+standalone bundles or browser/Adventure Land loading adapters. The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.
