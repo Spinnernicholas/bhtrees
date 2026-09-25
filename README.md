@@ -385,8 +385,8 @@ snapshots include it as `blackboard`. Older snapshots retain top-level values,
 but application object values are not cloned or frozen. Arbitrary nested mutation
 is not observable: replace a value through `set` to notify observers. No unbounded
 history is retained. External writes are allowed while execution is paused; tree
-evaluation resumes only on step/continue. The full debugger watchpoint controller
-remains planned.
+evaluation resumes only on step/continue. The debugger supports key/operation
+watchpoints; see the write watchpoint section below for limits and pause semantics.
 
 ## Declarative path bindings
 
@@ -1040,7 +1040,7 @@ breakpoint form; clicking a tree node fills in its node ID. The current hit and 
 activation ID appear beside the execution status. Step-over/out controls show why a
 bounded command stopped; activation buttons select a specific shared-node invocation.
 Resume/completion/error
-breakpoints, watchpoints, historical state/profiling, multiple runners and reusable list/block
+breakpoints, historical state/profiling, multiple runners and reusable list/block
 renderer components remain pending. HTTP tests cover controls and access checks; a
 Chrome smoke test verifies the served UI connects and displays the runtime.
 
@@ -1083,7 +1083,7 @@ runner or its scheduler; the wrapper remains usable for execution. Host owners m
 release those resources separately. The browser playground now uses this client for
 execution controls and rendering notifications.
 
-Additional breakpoint kinds, watchpoints, recordings, checkpoints, and reusable
+Additional breakpoint kinds, recordings, checkpoints, and reusable
 debugger renderers remain pending. The Node HTTP transport is described above.
 
 ### Step over and step out
@@ -1107,10 +1107,45 @@ in a parallel/reactive traversal may execute as required by normal engine orderi
 
 Snapshots and remote state expose `stepResult`, containing the command, target
 activation ID, transitions executed and stop reason: `target-left`, `blocked`,
-`budget`, `breakpoint`, or `terminal`. `target-left` means the activation is no longer
+`budget`, `breakpoint`, `watchpoint`, or `terminal`. `target-left` means the activation is no longer
 live, whether completed or interrupted; it does not imply success. These drives do
 not increment logical tick counters. Continue, tick, cancel or another step clears
 the previous report. A stopped command is not automatically resumed in the background.
+
+### Blackboard write watchpoints
+
+```js
+debug.command({ type: 'setWatchpoint', key: 'health', operation: 'set' });
+debug.command({ type: 'removeWatchpoint', key: 'health' });
+```
+
+The runner must have an injected observable blackboard. `operation` accepts `set`,
+`delete`, or `any` (the default). Each key has at most one watchpoint; setting it again
+replaces the filter. Up to 1000 keys are supported, each at most 1024 characters,
+including empty keys. Missing boards and malformed commands return structured errors.
+The remote UI provides a watchpoint form and latest-write inspection. The remote
+example exposes a `ticks` key that can be watched while its work action runs.
+
+A hit occurs after a committed observable write. It requests a pause at the next
+engine boundary; the current handler still finishes, and a terminal root may finish
+before pausing can prevent further work. Advanced stepping stops with reason
+`watchpoint`. External writes can also pause idle/running runners; refresh the client
+to see those hits. Writes after a runner is terminal are ignored. Nested mutation,
+sets of the same value, and deletion of absent keys follow blackboard semantics and
+do not produce change events.
+
+Snapshots include `watchpoints` and `watchpointHit`: revision, operation, key,
+`hadValue`, previous value and new value. If a handler makes several matching writes,
+the latest hit wins. Values retain live references locally and use descriptive bounded
+serialization remotely. This is latest-hit inspection, not a write history or a
+value-comparison condition. Continue/step/tick/cancel clears the previous hit before
+driving; removing a watchpoint does not resume the runner. Removing the last watchpoint
+or disposing the debugger releases its write subscription without disposing the board.
+
+Hosts can use `runner.observeBlackboard(listener)` for isolated change observation.
+It returns an unsubscribe function and throws if no board exists. Observer errors
+are reported through `onEventError`, without making an otherwise successful write
+fail. Boards remain caller-owned, including when shared by multiple runners.
 
 ### Entry breakpoints
 

@@ -545,7 +545,12 @@ Run browser and Adventure Land smoke examples in their real host environments.
   out its parent, with breakpoint/blocked/terminal/budget stop reports. Both remain
   paused and preserve logical tick counters. Remote controls and per-activation
   selection are implemented; tests cover nested/parallel scopes, waits and budgets.
-  Resume/completion/error breakpoints and watchpoints remain next.
+  Added blackboard set/delete/any-key watchpoints with boundary pause, latest-change
+  inspection and remote controls. Runner-bound subscriptions work with configured
+  blackboards and detach without disposing caller-owned data. Advanced steps stop on
+  hits. Tests cover external/handler writes, filtering, cleanup and remote commands.
+  Full write history and value-comparison watchpoint conditions are not implemented.
+  Resume/completion/error breakpoints remain next.
 - Add bounded recording, historical snapshots, checkpoint capability checks/restore hooks.
 - Implement local and Node remote transports, reconnect, and resynchronization.
   Implemented the first Node-hosted browser debugger: loopback-only HTTP server,

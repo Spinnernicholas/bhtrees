@@ -1,4 +1,9 @@
-import type { Runner, RunnerSnapshot, FrameSnapshot, RunnerEvent, RunnerEntryBoundary } from './types.js';
+import type { Runner, RunnerSnapshot, FrameSnapshot, RunnerEvent, RunnerEntryBoundary, BlackboardChange, BlackboardListener } from './types.js';
+
+export interface DebugWatchpoint {
+  readonly key: string;
+  readonly operation: 'set' | 'delete' | 'any';
+}
 
 export interface EntryBreakpoint {
   readonly nodeId: string;
@@ -23,12 +28,15 @@ export interface DebugStepResult {
   readonly command: 'stepOver' | 'stepOut';
   readonly targetActivationId: number;
   readonly transitions: number;
-  readonly reason: 'target-left' | 'blocked' | 'budget' | 'breakpoint' | 'terminal';
+  readonly reason: 'target-left' | 'blocked' | 'budget' | 'breakpoint' | 'watchpoint' | 'terminal';
 }
 export type DebugCommand = { type: 'pause' | 'continue' | 'stepInto' | 'stepOver' | 'stepOut' | 'tick' } |
   { type: 'cancel'; reason?: string } | { type: 'select'; activationId: number | null } |
-  ({ type: 'setBreakpoint' } & EntryBreakpoint) | { type: 'removeBreakpoint'; nodeId: string };
+  ({ type: 'setBreakpoint' } & EntryBreakpoint) | { type: 'removeBreakpoint'; nodeId: string } |
+  { type: 'setWatchpoint'; key: string; operation?: DebugWatchpoint['operation'] } | { type: 'removeWatchpoint'; key: string };
 export interface DebugSnapshot {
+  readonly watchpoints: readonly DebugWatchpoint[];
+  readonly watchpointHit: Readonly<BlackboardChange> | null;
   readonly stepResult: DebugStepResult | null;
   readonly breakpoints: readonly EntryBreakpoint[];
   readonly breakpointHit: { readonly nodeId: string; readonly activationId: number } | null;
@@ -72,6 +80,9 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
   if (!Number.isInteger(eventLimit) || eventLimit < 0 || eventLimit > 10000) throw new RangeError('Invalid debugger event limit');
   const events: DebugEventSummary[] = [];
   const breakpoints = new Map<string, EntryBreakpoint>();
+  const watchpoints = new Map<string, DebugWatchpoint>();
+  let watchpointHit: Readonly<BlackboardChange> | null = null;
+  let unsubscribeWrites: (() => void) | undefined;
   let breakpointHit: DebugSnapshot['breakpointHit'] = null;
   let stepResult: DebugStepResult | null = null;
   let droppedEvents = 0;
@@ -107,7 +118,8 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
     const selection = runner.frames.find(frame => frame.activationId === selected) ?? null;
     if (!selection) selected = null;
     return Object.freeze({ version: 1, revision, runner, selectedActivationId: selected, selection,
-      events: Object.freeze([...events]), droppedEvents, breakpoints: Object.freeze([...breakpoints.values()]), breakpointHit, stepResult });
+      events: Object.freeze([...events]), droppedEvents, breakpoints: Object.freeze([...breakpoints.values()]), breakpointHit, stepResult,
+      watchpoints: Object.freeze([...watchpoints.values()]), watchpointHit });
   }
   let current = capture();
   function notify(listener: (snapshot: DebugSnapshot) => void): void {
@@ -132,13 +144,14 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
     } finally { busy = false; }
   }
   const runner: Runner = Object.freeze({
+    observeBlackboard: (listener: BlackboardListener) => source.observeBlackboard(listener),
     beforeEnter: (listener: (boundary: RunnerEntryBoundary) => boolean | void) => source.beforeEnter(listener),
     subscribe: (listener: (event: RunnerEvent) => void) => source.subscribe(listener),
-    tick: () => drive(() => { stepResult = null; return source.tick(); }),
-    step: () => drive(() => { stepResult = null; breakpointHit = null; return source.step(); }),
+    tick: () => drive(() => { stepResult = null; if (!source.snapshot().paused) watchpointHit = null; return source.tick(); }),
+    step: () => drive(() => { watchpointHit = null; stepResult = null; breakpointHit = null; return source.step(); }),
     pause: () => drive(() => source.pause()),
-    continue: () => drive(() => { stepResult = null; source.continue(); }),
-    cancel: (reason?: string) => drive(() => { stepResult = null; return source.cancel(reason); }),
+    continue: () => drive(() => { watchpointHit = null; stepResult = null; source.continue(); }),
+    cancel: (reason?: string) => drive(() => { watchpointHit = null; stepResult = null; return source.cancel(reason); }),
     snapshot: () => source.snapshot()
   });
   function failure(code: Extract<DebugCommandResult, { ok: false }>['code'], message: string): DebugCommandResult {
@@ -151,6 +164,7 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
     for (let count = 0; count < stepBudget; count++) {
       const before = source.snapshot().transitions;
       const state = source.step();
+      if (watchpointHit) { reason = 'watchpoint'; break; }
       if (breakpointHit) { reason = 'breakpoint'; break; }
       if (!['idle', 'RUNNING'].includes(state.status)) { reason = 'terminal'; break; }
       if (!state.frames.some(frame => frame.activationId === target)) { reason = 'target-left'; break; }
@@ -163,7 +177,7 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
   }
   return Object.freeze({
     version: 1,
-    capabilities: Object.freeze(['pause', 'continue', 'stepInto', 'stepOver', 'stepOut', 'tick', 'cancel', 'select', 'setBreakpoint', 'removeBreakpoint'] as const),
+    capabilities: Object.freeze(['pause', 'continue', 'stepInto', 'stepOver', 'stepOut', 'tick', 'cancel', 'select', 'setBreakpoint', 'removeBreakpoint', 'setWatchpoint', 'removeWatchpoint'] as const),
     runner,
     snapshot: () => current,
     subscribe(listener: (snapshot: DebugSnapshot) => void) {
@@ -189,12 +203,22 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
           return failure('INVALID_COMMAND', 'Expected string-keyed command data');
         }
         const type = fields.type?.value;
-        if (typeof type !== 'string' || !['pause', 'continue', 'stepInto', 'stepOver', 'stepOut', 'tick', 'cancel', 'select', 'setBreakpoint', 'removeBreakpoint'].includes(type)) return failure('INVALID_COMMAND', 'Unknown command type');
+        if (typeof type !== 'string' || !['pause', 'continue', 'stepInto', 'stepOver', 'stepOut', 'tick', 'cancel', 'select', 'setBreakpoint', 'removeBreakpoint', 'setWatchpoint', 'removeWatchpoint'].includes(type)) return failure('INVALID_COMMAND', 'Unknown command type');
         const allowed = type === 'cancel' ? ['type', 'reason'] : type === 'select' ? ['type', 'activationId'] :
-          type === 'setBreakpoint' ? ['type', 'nodeId', 'inputPath', 'equals'] : type === 'removeBreakpoint' ? ['type', 'nodeId'] : ['type'];
+          type === 'setBreakpoint' ? ['type', 'nodeId', 'inputPath', 'equals'] : type === 'removeBreakpoint' ? ['type', 'nodeId'] :
+          type === 'setWatchpoint' ? ['type', 'key', 'operation'] : type === 'removeWatchpoint' ? ['type', 'key'] : ['type'];
         if (Object.keys(fields).some(key => !allowed.includes(key))) return failure('INVALID_COMMAND', 'Unknown command field');
         const reason = fields.reason?.value, activationId = fields.activationId?.value;
         const nodeId = fields.nodeId?.value, inputPath = fields.inputPath?.value, equals = fields.equals?.value;
+        const key = fields.key?.value, operation = fields.operation?.value === undefined ? 'any' : fields.operation.value;
+        if (type === 'setWatchpoint' || type === 'removeWatchpoint') {
+          if (typeof key !== 'string' || key.length > 1024) return failure('INVALID_COMMAND', 'Expected a blackboard key of at most 1024 characters');
+          if (!['set', 'delete', 'any'].includes(operation)) return failure('INVALID_COMMAND', 'Expected set, delete or any operation');
+          if (type === 'setWatchpoint') {
+            if (!source.snapshot().blackboard) return failure('INVALID_STATE', 'Runner has no blackboard');
+            if (!watchpoints.has(key) && watchpoints.size >= 1000) return failure('INVALID_STATE', 'Watchpoint limit reached');
+          }
+        }
         let breakpoint: EntryBreakpoint | undefined;
         if (type === 'setBreakpoint' || type === 'removeBreakpoint') {
           if (typeof nodeId !== 'string' || !nodeId.trim() || nodeId.length > 1024) return failure('INVALID_COMMAND', 'Expected a node ID of 1–1024 characters');
@@ -233,12 +257,12 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
         }
         if (type === 'select') {
           if (activationId !== null && !state.frames.some(frame => frame.activationId === activationId)) return failure('INVALID_STATE', 'Activation is not live');
-        } else if (type !== 'setBreakpoint' && type !== 'removeBreakpoint') {
+        } else if (!['setBreakpoint', 'removeBreakpoint', 'setWatchpoint', 'removeWatchpoint'].includes(type)) {
           if (!['idle', 'RUNNING'].includes(state.status)) return failure('INVALID_STATE', 'Runner is terminal');
           if (type === 'tick' && state.paused) return failure('INVALID_STATE', 'Continue before advancing a logical tick; use stepInto while paused');
         }
         drive(() => {
-          if (['continue', 'stepInto', 'tick', 'cancel', 'stepOver', 'stepOut'].includes(type)) stepResult = null;
+          if (['continue', 'stepInto', 'tick', 'cancel', 'stepOver', 'stepOut'].includes(type)) { stepResult = null; watchpointHit = null; }
           switch (type) {
             case 'pause': source.pause(); break;
             case 'continue': source.continue(); break;
@@ -249,6 +273,21 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
             case 'select': selected = activationId; break;
             case 'setBreakpoint': breakpoints.set(nodeId, breakpoint!); break;
             case 'removeBreakpoint': breakpoints.delete(nodeId); break;
+            case 'setWatchpoint':
+              if (!unsubscribeWrites) unsubscribeWrites = source.observeBlackboard(change => {
+                const watchpoint = watchpoints.get(change.key);
+                if (!watchpoint || watchpoint.operation !== 'any' && watchpoint.operation !== change.type) return;
+                const status = source.snapshot().status;
+                if (status !== 'idle' && status !== 'RUNNING') return;
+                watchpointHit = Object.freeze({ ...change });
+                source.pause();
+              });
+              watchpoints.set(key, Object.freeze({ key, operation }));
+              break;
+            case 'removeWatchpoint':
+              watchpoints.delete(key);
+              if (!watchpoints.size) { unsubscribeWrites?.(); unsubscribeWrites = undefined; }
+              break;
           }
         });
         return Object.freeze({ ok: true, snapshot: current });
@@ -259,6 +298,6 @@ export function createDebugger(source: Runner, options: DebuggerOptions = {}): D
       drive(() => undefined);
       return current;
     },
-    dispose() { disposed = true; listeners.clear(); unsubscribeEvents(); unsubscribeEntries(); }
+    dispose() { disposed = true; listeners.clear(); unsubscribeEvents(); unsubscribeEntries(); unsubscribeWrites?.(); }
   });
 }

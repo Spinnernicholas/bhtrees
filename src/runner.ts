@@ -1,6 +1,6 @@
 import { normalizeBinding, evaluateBinding } from './bindings.js';
 import type { Value, NodeDefinition, RunnerOptions, Runner, RunnerStatus, RunnerSnapshot,
-  ActionContext, Scope, ActionResult, Completion, WaitKind, FramePhase, RunnerEvent, RunnerEntryBoundary } from './types.js';
+  ActionContext, Scope, ActionResult, Completion, WaitKind, FramePhase, RunnerEvent, RunnerEntryBoundary, BlackboardListener } from './types.js';
 
 interface WaitToken {
   settled: boolean;
@@ -559,6 +559,14 @@ export function createRunner(root: NodeDefinition, { input, services = {}, black
   }
 
   return Object.freeze({
+    observeBlackboard(listener: BlackboardListener) {
+      if (!blackboard) throw new Error('Runner has no blackboard');
+      if (typeof listener !== 'function') throw new TypeError('Expected a blackboard listener');
+      return blackboard.subscribe(change => {
+        try { listener(change); }
+        catch (error) { try { onEventError?.(error); } catch { /* Isolate observation failures. */ } }
+      });
+    },
     beforeEnter(listener: (boundary: RunnerEntryBoundary) => boolean | void) {
       if (typeof listener !== 'function') throw new TypeError('Expected an entry boundary listener');
       const registration = (boundary: RunnerEntryBoundary) => listener(boundary);

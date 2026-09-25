@@ -226,6 +226,8 @@ export interface RunnerSnapshot {
   readonly frames: readonly FrameSnapshot[];
 }
 export interface Runner {
+  /** Observe writes to this runner's injected board. Throws when no board is configured. */
+  observeBlackboard(listener: BlackboardListener): () => void;
   /** Return true to pause before the first transition of a new activation. */
   beforeEnter(listener: (boundary: RunnerEntryBoundary) => boolean | void): () => void;
   /** No initial event. Delivery is synchronous at completed engine boundaries. */

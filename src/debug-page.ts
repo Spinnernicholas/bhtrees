@@ -9,6 +9,10 @@ export const debugPage = `<!doctype html>
 <label>Input path (JSON array, optional) <input id="breakpoint-path" placeholder='["mode"]'></label>
 <label>Equals (JSON scalar) <input id="breakpoint-value" placeholder='"combat"'></label>
 <button>Set breakpoint</button></form><ul id="breakpoints"></ul></section>
+<section><h2>Blackboard watchpoints</h2><form id="watchpoint-form">
+<label>Key <input id="watchpoint-key" maxlength="1024"></label>
+<label>Operation <select id="watchpoint-operation"><option>any</option><option>set</option><option>delete</option></select></label>
+<button>Set watchpoint</button></form><ul id="watchpoints"></ul><pre id="watchpoint-hit"></pre></section>
 <main><section><h2>Tree</h2><ul id="tree"></ul></section><section><h2>Inspection</h2><div id="activation-controls"></div><pre id="inspection"></pre></section></main>
 <section><h2>Execution events</h2><label>Filter by node <input id="event-filter"></label><p id="event-count"></p><pre id="events"></pre></section>
 <script type="module" src="/view.js"></script></html>`;
@@ -20,6 +24,10 @@ const client = createRemoteDebugger({ url: location.href, token });
 const byId = id => document.getElementById(id);
 let stopped = false, busy = false, selected = null, timer, lastRevision = -1;
 const names = { pause: 'Pause', continue: 'Continue', stepInto: 'Step into', stepOver: 'Step over', stepOut: 'Step out', tick: 'Tick', cancel: 'Cancel' };
+byId('watchpoint-form').onsubmit = event => {
+  event.preventDefault();
+  command({ type: 'setWatchpoint', key: byId('watchpoint-key').value, operation: byId('watchpoint-operation').value });
+};
 byId('breakpoint-form').onsubmit = event => {
   event.preventDefault();
   try {
@@ -46,6 +54,14 @@ function render(state) {
   byId('status').textContent = runner.status + (runner.paused ? ' · paused' : '') + ' · revision ' + snapshot.revision;
   if (state.breakpointHit) byId('status').textContent += ' · entry breakpoint: ' + state.breakpointHit.nodeId + ' [' + state.breakpointHit.activationId + ']';
   if (state.stepResult) byId('status').textContent += ' · ' + state.stepResult.command + ': ' + state.stepResult.reason + ' after ' + state.stepResult.transitions + ' transitions';
+  byId('watchpoints').replaceChildren();
+  for (const watchpoint of state.watchpoints) {
+    const item = document.createElement('li'); item.append(document.createTextNode(JSON.stringify(watchpoint.key) + ' · ' + watchpoint.operation));
+    const remove = document.createElement('button'); remove.textContent = 'Remove';
+    remove.onclick = () => command({ type: 'removeWatchpoint', key: watchpoint.key });
+    item.append(remove); byId('watchpoints').append(item);
+  }
+  byId('watchpoint-hit').textContent = state.watchpointHit ? 'Latest write hit: ' + JSON.stringify(state.watchpointHit, null, 2) : '';
   byId('breakpoints').replaceChildren();
   for (const breakpoint of state.breakpoints) {
     const item = document.createElement('li');

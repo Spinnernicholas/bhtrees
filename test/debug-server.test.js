@@ -1,19 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { action, createRunner, createDebugger, sequence, RUNNING } from '../dist/index.js';
+import { action, createRunner, createDebugger, createBlackboard, sequence, RUNNING } from '../dist/index.js';
 import { startDebuggerServer } from 'bhtrees/node';
 import { createRemoteDebugger } from 'bhtrees/browser';
 import { inspectDebugValue } from '../dist/debug-wire.js';
 
 async function setup(t) {
   const tree = sequence({ id: 'root', steps: [{ node: action({ id: 'running', tick: () => RUNNING }) }] });
-  const debug = createDebugger(createRunner(tree));
+  const board = createBlackboard();
+  const debug = createDebugger(createRunner(tree, { blackboard: board }));
   const server = await startDebuggerServer({ client: debug, tree });
   t.after(() => server.close());
   const url = new URL(server.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
   const remote = createRemoteDebugger({ url: url.origin, token });
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-  return { tree, debug, server, url, remote, headers };
+  return { tree, debug, server, url, remote, headers, board };
 }
 
 test('HTTP remote client resynchronizes definitions and snapshots and drives validated controls', async t => {
@@ -86,4 +87,15 @@ test('inspection safely describes cycles, errors, functions, accessors and bound
   assert.equal(result.accessor.$debug, 'accessor'); assert.ok(result.text.length < 2100);
   const array = inspectDebugValue(Array.from({ length: 1000 }, () => 1));
   assert.equal(array.length, 201); assert.equal(array.at(-1).$debug, 'item limit');
+});
+
+test('remote watchpoints report committed changes and support removal', async t => {
+  const { remote, board } = await setup(t);
+  assert.equal((await remote.command({ type: 'setWatchpoint', key: 'hp', operation: 'set' })).result.ok, true);
+  board.set('hp', 5);
+  const state = await remote.read();
+  assert.equal(state.watchpointHit.key, 'hp'); assert.equal(state.watchpointHit.value, 5);
+  assert.equal(state.snapshot.runner.paused, true); assert.equal(state.watchpoints.length, 1);
+  await remote.command({ type: 'removeWatchpoint', key: 'hp' }); await remote.command({ type: 'continue' });
+  board.set('hp', 4); assert.equal((await remote.read()).watchpointHit, null);
 });
