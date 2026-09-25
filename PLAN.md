@@ -434,8 +434,12 @@ reactive interruption, parallel results, repeat budgets, and runs without a blac
   strict function-binding export errors, and field-path validation.
   Custom value registries now provide collision-safe portable envelopes, JSON
   round trips, and sequential version migration hooks with strict value validation.
-  Next: custom node factories and node migration hooks; non-tree document kinds
-  remain pending.
+  Custom node factories now construct built-in runtime nodes from portable data
+  and explicit child references, preserving shared definitions and factory identity
+  through JSON round trips. Sequential node data migrations upgrade older payloads;
+  structural preflight, factory-result validation, and field-path errors cover failures.
+  Next: the owned YAML data-profile parser/writer and conformance fixtures, followed
+  by configuration documents and resolution. Non-tree document kinds remain pending.
 - Implement owned YAML parser/writer and conformance fixtures in parallel with schema work.
 - Implement embedded/separate config, provenance, precedence, and config resolution.
 

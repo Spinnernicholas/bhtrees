@@ -1,29 +1,68 @@
 import { DocumentError } from './document-error.js';
 export { DocumentError } from './document-error.js';
-import { attachValueRegistry, registerValueType } from './values.js';
-import type { ValueCodec } from './values.js';
+import { attachValueRegistry, registerValueType, toPortableValue, fromPortableValue } from './values.js';
+import type { ValueCodec, PortableValue } from './values.js';
 import * as nodes from './nodes.js';
 import { normalizeBinding } from './bindings.js';
 import type { ActionOptions, ActionDefinition, ConditionDefinition, NodeDefinition, PathBinding, Reactive, Value } from './types.js';
 
 export type ActionImplementation = ActionOptions extends infer O ? O extends ActionOptions ? Omit<O, 'id' | 'reactive'> : never : never;
+export interface NodeFactoryOptions {
+  id: string;
+  reactive: Reactive;
+  data: unknown;
+  children: readonly NodeDefinition[];
+}
+export interface NodeFactory {
+  version: number;
+  create(options: NodeFactoryOptions): NodeDefinition;
+  /** Each entry upgrades that version's decoded data to the next version. */
+  migrations?: Readonly<Record<number, (data: unknown) => unknown>>;
+}
+export interface CreateNodeOptions {
+  id: string;
+  reactive?: Reactive;
+  data: unknown;
+  children?: readonly NodeDefinition[];
+}
 export interface TreeRegistry {
+  registerNode(name: string, factory: NodeFactory): void;
+  createNode(name: string, options: CreateNodeOptions): NodeDefinition;
   registerValue<T>(name: string, codec: ValueCodec<T>): void;
   registerAction(name: string, implementation: ActionImplementation, version?: number): void;
   registerCondition(name: string, test: ConditionDefinition['test'], version?: number): void;
 }
 interface Entry { name: string; version: number; definition: ActionDefinition | ConditionDefinition }
 const registries = new WeakMap<TreeRegistry, Map<string, Entry>>();
+const factories = new WeakMap<TreeRegistry, Map<string, NodeFactory>>();
+const customNodes = new WeakMap<NodeDefinition, { registry: TreeRegistry; name: string; data: PortableValue; children: readonly NodeDefinition[] }>();
 
 export function createRegistry(): TreeRegistry {
   const entries = new Map<string, Entry>();
+  const nodeFactories = new Map<string, NodeFactory>();
   function register(name: string, version: number, definition: Entry['definition']) {
     if (typeof name !== 'string' || !name) throw new TypeError('Registry names must be nonempty strings');
     if (!Number.isSafeInteger(version) || version < 1) throw new RangeError('Registry versions must be positive safe integers');
-    if (entries.has(name)) throw new TypeError(`Duplicate implementation name: ${name}`);
+    if (entries.has(name) || nodeFactories.has(name)) throw new TypeError(`Duplicate implementation name: ${name}`);
     entries.set(name, { name, version, definition });
   }
   const registry: TreeRegistry = Object.freeze({
+    registerNode(name: string, factory: NodeFactory) {
+      if (typeof name !== 'string' || !name) throw new TypeError('Registry names must be nonempty strings');
+      if (!factory || !Number.isSafeInteger(factory.version) || factory.version < 1 || typeof factory.create !== 'function') throw new TypeError('Node factories require a positive safe integer version and create function');
+      if (entries.has(name) || nodeFactories.has(name)) throw new TypeError(`Duplicate implementation name: ${name}`);
+      const migrations = { ...factory.migrations };
+      for (const [key, migrate] of Object.entries(migrations)) {
+        const version = Number(key);
+        if (!Number.isSafeInteger(version) || version < 1 || version >= factory.version || String(version) !== key || typeof migrate !== 'function') throw new TypeError('Invalid node migration');
+      }
+      nodeFactories.set(name, Object.freeze({ version: factory.version, create: factory.create, migrations: Object.freeze(migrations) }));
+    },
+    createNode(name: string, options: CreateNodeOptions) {
+      const factory = nodeFactories.get(name);
+      if (!factory) fail('$node.implementation', `Unknown node implementation: ${name}`);
+      return constructNode(registry, name, factory, options, '$node');
+    },
     registerValue<T>(name: string, codec: ValueCodec<T>) { registerValueType(registry, name, codec); },
     registerAction(name: string, implementation: ActionImplementation, version = 1) {
       register(name, version, nodes.action({ ...implementation, id: name }));
@@ -33,6 +72,7 @@ export function createRegistry(): TreeRegistry {
     }
   });
   registries.set(registry, entries);
+  factories.set(registry, nodeFactories);
   attachValueRegistry(registry);
   return registry;
 }
@@ -40,7 +80,9 @@ export function createRegistry(): TreeRegistry {
 export interface TreeStepDocument { node: string; input?: PathBinding; save?: string }
 export interface TreeNodeDocument {
   id: string;
-  type: NodeDefinition['type'];
+  type: NodeDefinition['type'] | 'custom';
+  data?: PortableValue;
+  children?: string[];
   reactive?: Reactive;
   implementation?: string;
   implementationVersion?: number;
@@ -65,6 +107,33 @@ export interface SerializationOptions { registry?: TreeRegistry }
 const MAX_DEPTH = 128, MAX_NODES = 10000, MAX_TEXT = 1000000;
 const builtinTypes = ['sequence', 'selector', 'parallel', 'inverter', 'forceSuccess', 'forceFailure', 'retry', 'repeat', 'delay', 'timeout', 'cooldown', 'subtree'];
 function fail(path: string, message: string): never { throw new DocumentError(path, message); }
+function atPath<T>(path: string, callback: () => T): T {
+  try { return callback(); }
+  catch (error) {
+    if (error instanceof DocumentError) fail(path + error.path.slice(1), error.message);
+    fail(path, error instanceof Error ? error.message : String(error));
+  }
+}
+function childrenOf(node: NodeDefinition): readonly NodeDefinition[] {
+  return 'steps' in node ? node.steps.map(step => step.node) : 'child' in node ? [node.child] : [];
+}
+function constructNode(registry: TreeRegistry, name: string, factory: NodeFactory, options: CreateNodeOptions, path: string): NodeDefinition {
+  const id = string(options.id, `${path}.id`), reactive = options.reactive === undefined ? 'inherited' : options.reactive;
+  if (![true, false, 'inherited'].includes(reactive)) fail(`${path}.reactive`, 'Invalid reactive setting');
+  if (options.children !== undefined && !Array.isArray(options.children)) fail(`${path}.children`, 'Expected an array');
+  const children = Object.freeze([...(options.children ?? [])]);
+  const data = atPath(`${path}.data`, () => toPortableValue(options.data, { registry }));
+  const decoded = atPath(`${path}.data`, () => fromPortableValue(data, { registry }));
+  const result = atPath(path, () => factory.create(Object.freeze({ id, reactive, data: decoded, children })));
+  if (!result || result.id !== id || result.reactive !== reactive) fail(path, 'Node factory must preserve id and reactive');
+  if (!['action', 'condition', ...builtinTypes].includes(result.type)) fail(path, 'Node factory must return a built-in node definition');
+  // Normalize through the public constructor so invalid callback/options cannot enter the engine.
+  const node = atPath(path, () => (nodes[result.type as keyof typeof nodes] as (options: Value) => NodeDefinition)(result));
+  const actual = childrenOf(node);
+  if (actual.length !== children.length || actual.some((child, index) => child !== children[index])) fail(`${path}.children`, 'Node factory must preserve declared children in order');
+  customNodes.set(node, { registry, name, data, children });
+  return node;
+}
 function registryEntries(registry?: TreeRegistry) {
   if (!registry) return new Map<string, Entry>();
   const entries = registries.get(registry);
@@ -99,7 +168,16 @@ export function toTreeDocument(root: NodeDefinition, { registry }: Serialization
     const record: TreeNodeDocument = { id: node.id, type: node.type, reactive: node.reactive };
     const location = `$.nodes[${table.length}]`;
     table.push(record);
-    if (node.type === 'action' || node.type === 'condition') {
+    const custom = customNodes.get(node);
+    if (custom) {
+      if (custom.registry !== registry) fail(`${location}.implementation`, 'Custom node belongs to a different registry');
+      record.type = 'custom';
+      record.implementation = custom.name;
+      record.implementationVersion = factories.get(registry!)!.get(custom.name)!.version;
+      // Copy the envelope without invoking application codecs a second time.
+      record.data = JSON.parse(JSON.stringify(custom.data)) as PortableValue;
+      record.children = custom.children.map((child, index) => visit(child, `${location}.children[${index}]`, depth + 1));
+    } else if (node.type === 'action' || node.type === 'condition') {
       const entry = [...entries.values()].find(entry => node.type === 'action'
         ? entry.definition.type === 'action' && sameAction(node, entry.definition)
         : entry.definition.type === 'condition' && node.test === entry.definition.test);
@@ -125,7 +203,7 @@ export function toTreeDocument(root: NodeDefinition, { registry }: Serialization
   }
   const document: TreeDocument = { format: 'bhtrees', version: 1, kind: 'tree', root: visit(root, '$root', 0), nodes: table };
   // Reuse structural and graph validation, including counts and supported fields.
-  fromTreeDocument(document, { registry });
+  readTreeDocument(document, { registry }, seen);
   return document;
 }
 
@@ -145,6 +223,12 @@ function string(value: Value, path: string): string {
 }
 
 export function fromTreeDocument(value: unknown, { registry }: SerializationOptions = {}): NodeDefinition {
+  // Reject malformed structure/references before invoking any application factories.
+  readTreeDocument(value, { registry }, undefined, true);
+  return readTreeDocument(value, { registry });
+}
+
+function readTreeDocument(value: unknown, { registry }: SerializationOptions, exported?: Map<string, NodeDefinition>, validateOnly = false): NodeDefinition {
   const entries = registryEntries(registry);
   const document = record(value, '$');
   fields(document, ['format', 'version', 'kind', 'root', 'nodes'], '$');
@@ -178,7 +262,25 @@ export function fromTreeDocument(value: unknown, { registry }: SerializationOpti
     if (data.reactive !== undefined && ![true, false, 'inherited'].includes(data.reactive)) fail(`${path}.reactive`, 'Invalid reactive setting');
     const base = ['id', 'type', 'reactive'];
     let node: NodeDefinition;
-    if (type === 'action' || type === 'condition') {
+    if (type === 'custom') {
+      fields(data, [...base, 'implementation', 'implementationVersion', 'data', 'children'], path);
+      const name = string(data.implementation, `${path}.implementation`);
+      const factory = registry && factories.get(registry)!.get(name);
+      if (!factory) fail(`${path}.implementation`, `Unknown node implementation: ${name}`);
+      const version = data.implementationVersion;
+      if (!Number.isSafeInteger(version) || version < 1 || version > factory.version) fail(`${path}.implementationVersion`, 'Unsupported node implementation version');
+      if (factory.version - version > MAX_DEPTH) fail(`${path}.implementationVersion`, 'Too many migration steps');
+      for (let v = version; v < factory.version; v++) if (!factory.migrations?.[v]) fail(`${path}.implementationVersion`, `Missing migration from version ${v}`);
+      if (!Array.isArray(data.children)) fail(`${path}.children`, 'Expected an array');
+      const children = data.children.map((child: Value, index: number) => build(string(child, `${path}.children[${index}]`), `${path}.children[${index}]`, depth + 1));
+      if (exported) node = exported.get(id)!;
+      else if (validateOnly) node = nodes.sequence({ ...common, steps: children.map((node: NodeDefinition) => ({ node })) });
+      else {
+        let payload = atPath(`${path}.data`, () => fromPortableValue(data.data, { registry }));
+        for (let v = version; v < factory.version; v++) payload = atPath(`${path}.data`, () => factory.migrations![v](payload));
+        node = constructNode(registry!, name, factory, { ...common, data: payload, children }, path);
+      }
+    } else if (type === 'action' || type === 'condition') {
       fields(data, [...base, 'implementation', 'implementationVersion'], path);
       const name = string(data.implementation, `${path}.implementation`), entry = entries.get(name);
       if (!entry || entry.definition.type !== type) fail(`${path}.implementation`, `Unknown ${type} implementation: ${name}`);

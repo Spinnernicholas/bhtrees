@@ -1,5 +1,24 @@
 import { action, sequence, selector, condition, inverter, forceSuccess, forceFailure, retry, repeat, delay, timeout, cooldown, subtree, parallel, createRegistry, encodeTree, decodeTree, toTreeDocument, fromTreeDocument, encodeValue, decodeValue, toPortableValue, fromPortableValue, createBlackboard, createRunner, SUCCESS, RUNNING } from 'bhtrees';
 import type { ActionImplementation, ActionContext, Clock, NodeDefinition, RunnerSnapshot, WaitDescriptor } from 'bhtrees';
+import type { NodeFactory, NodeFactoryOptions, CreateNodeOptions } from 'bhtrees';
+
+const factoryRegistry = createRegistry();
+const factory: NodeFactory = { version: 2, migrations: { 1: data => ({ value: data }) },
+  create(options: NodeFactoryOptions) {
+    // @ts-expect-error Factory data requires application validation/narrowing.
+    options.data.value;
+    // @ts-expect-error The child array is readonly.
+    options.children.push(action({ id: 'extra', tick: () => SUCCESS }));
+    return sequence({ id: options.id, reactive: options.reactive,
+      steps: options.children.map(node => ({ node })) });
+  }
+};
+factoryRegistry.registerNode('application.sequence', factory);
+const factoryOptions: CreateNodeOptions = { id: 'custom', data: null, children: [] };
+const customDefinition: NodeDefinition = factoryRegistry.createNode('application.sequence', factoryOptions);
+void customDefinition;
+// @ts-expect-error Factories must return a synchronous definition.
+factoryRegistry.registerNode('async', { version: 1, create: async () => sequence({ id: 'bad', steps: [] }) });
 
 const clock: Clock = { setTimeout: () => ({ id: 1 }), clearTimeout: handle => { void handle; } };
 const work = action({

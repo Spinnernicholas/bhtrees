@@ -464,13 +464,14 @@ input/output mappings.
 `DocumentError` includes a `path` such as `$.nodes[0].steps[1].input`. Unknown fields,
 unsupported types/versions, invalid options, missing references, duplicate IDs,
 cycles, and unreachable definitions fail validation. Implementation versions must
-match exactly; automatic migration is not implemented. Limits are 10,000 nodes,
+match exactly for `registerAction`/`registerCondition`; custom factories support the
+explicit data migrations described below. Limits are 10,000 nodes,
 128 child-reference edges in a path, and 1,000,000 characters for JSON text. JSON
 parsing uses the platform parser; this is not a YAML codec.
 
 Run `npm run build`, then `node examples/documents.js` for a complete example.
-This first document slice supports tree documents and registered action/condition
-implementations. Custom node factories, node migrations, YAML,
+Tree documents support registered action/condition implementations and custom
+factories with data migrations. YAML,
 configuration documents, checkpoints, and recordings remain planned.
 
 ## Custom values and migrations
@@ -524,8 +525,60 @@ Property descriptors/prototypes are not preserved. Codec payloads must eventuall
 reduce to supported values; a codec cannot encode a value as itself.
 
 Limits are 128 nesting levels, 100,000 visited values, 128 migration steps per
-custom value, and 1,000,000 characters for JSON text. Custom node factories and
-node-implementation migrations remain separate upcoming work.
+custom value, and 1,000,000 characters for JSON text.
+
+## Custom node factories
+
+`registry.registerNode(name, { version, create, migrations? })` registers a
+synchronous factory that builds an existing runtime node from portable data and
+explicit children. Use `registry.createNode(name, { id, reactive?, data, children? })`
+for code-authored definitions that retain their factory identity on export.
+Factory names share a namespace with action and condition implementations.
+
+```js
+const registry = createRegistry();
+registry.registerNode('app.constant', {
+  version: 2,
+  migrations: { 1: value => ({ value }) },
+  create({ id, reactive, data }) {
+    if (!data || typeof data !== 'object' || !Object.hasOwn(data, 'value')) {
+      throw new TypeError('Expected an object with value');
+    }
+    return action({ id, reactive, tick: ctx => ctx.success(data.value) });
+  }
+});
+const tree = registry.createNode('app.constant', {
+  id: 'answer', data: { value: 42 }
+});
+const restored = decodeTree(encodeTree(tree, { registry }), { registry });
+console.log(createRunner(restored).tick().output); // 42
+```
+
+Factories receive `{ id, reactive, data, children }`. The options and child array
+are frozen; data is copied through the portable value codecs, including registered
+custom value types. Validate the application's data shape in `create`. Return a
+built-in action, condition, composite, or decorator preserving the supplied ID,
+reactivity, and direct child references in order. For example, a sequence factory
+can map `children` to steps and derive bindings from `data`. Internal execution
+callbacks and function bindings are supplied by the factory's code. Factories
+cannot introduce new engine node types or hide additional child definitions.
+
+Documents store `type: 'custom'`, `implementation`, `implementationVersion`,
+portable `data`, and a `children` array of node IDs. Shared references remain shared.
+Export uses captured data and does not rerun factories or value codecs. Export a
+custom definition with the registry that created it; copying/spreading the definition
+does not preserve factory identity. Treat factory data and captured values as immutable.
+
+On import, graph/structural validation precedes factory calls. Value decoding and
+node data migrations then run before each factory, children first. A migration keyed
+by `n` upgrades data from version `n` to `n + 1`; it cannot change child references,
+IDs, or reactivity. Export writes the current version and migrated data. Future
+versions, missing migration steps, more than 128 steps, invalid results, and callback
+errors fail with `DocumentError` paths. Registration copies the migration table.
+Factories, migrations, and codecs must be synchronous, deterministic construction
+functions without external side effects: a later payload/factory error can still
+abort the import, and these callbacks have no rollback lifecycle. Action/condition
+execution callbacks run only when the runner executes.
 
 ## Reactivity
 
@@ -676,7 +729,7 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
-Not implemented yet: YAML, custom node factories/migrations, non-tree documents,
+Not implemented yet: YAML, non-tree documents,
 configuration and extensions, debugger controller/UI, recordings/checkpoints,
 standalone bundles or environment adapters. The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.
