@@ -984,6 +984,47 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
+## Standalone global build
+
+`npm run build` also generates `dist/bhtrees.global.js`. Copy that file to your
+site or script host and load it once as a regular script:
+
+```html
+<script src="./bhtrees.global.js"></script>
+<script>
+  const tree = BHTrees.action({
+    id: 'hello', tick: ctx => ctx.success('Hello!')
+  });
+  console.log(BHTrees.createRunner(tree).tick().output);
+</script>
+```
+
+The single file contains the core, built-in nodes, JSON/YAML codecs, configuration,
+extension system, scheduler, browser loader and Adventure Land host adapter. It has
+no runtime package dependencies and exposes a frozen `globalThis.BHTrees` object.
+Node filesystem/package APIs remain in `bhtrees/node`. Custom extension modules
+and external tree/config documents are still loaded separately when requested.
+The bundle targets ES2022-capable hosts; it does not provide browser polyfills.
+
+The standalone script fails if a `BHTrees` global already exists, including when it
+is loaded twice, so existing instances are not silently replaced. Keep the script
+loaded before code that uses it. For an example, run `npm run example:browser` and
+open `/examples/browser/global.html`. That page uses ordinary script tags and also
+fetches a YAML tree, its JSON config, and a native extension module. Chrome smoke
+tests exercise the page; live Adventure Land compatibility remains unvalidated.
+
+Package consumers can use `import 'bhtrees/global'` for the same global side effect;
+that entry has no named exports. Its declarations describe the global. For script
+projects, reference `dist/bhtrees.global.d.ts` from your TypeScript configuration or
+a triple-slash reference. Normal module consumers should keep importing from
+`bhtrees`, `bhtrees/browser`, or `bhtrees/adventure-land`.
+
+TypeScript and esbuild are development-only build tools. The normal build, tests,
+and package preparation regenerate the bundle; generated files remain in ignored
+`dist/`. Build validation rejects static external imports and accidental inclusion
+of the Node adapter or package runtime code. This build contains implemented APIs;
+the planned debugger controller and reusable renderers are still pending.
+
 ## Adventure Land host sessions
 
 `bhtrees/adventure-land` provides `loadAdventureLandSession(path, options)` with
@@ -1150,6 +1191,6 @@ Create one scheduler per runner and dispose it when the host view/session closes
 The browser playground demonstrates simulation advancement in `beforeTick`.
 
 Not implemented yet: full YAML syntax beyond the documented profile, debugger
-configuration, debugger controller/UI, recordings/checkpoints,
-standalone bundles. The engine uses standard host timers by default and no DOM or game
+configuration, debugger controller/UI, recordings/checkpoints.
+The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.

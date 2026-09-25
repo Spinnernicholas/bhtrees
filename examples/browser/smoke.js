@@ -6,6 +6,14 @@ async function until(predicate, message) {
   throw new Error(message);
 }
 try {
+  const globalFrame = document.createElement('iframe');
+  globalFrame.src = './global.html';
+  globalFrame.hidden = true;
+  document.body.append(globalFrame);
+  await until(() => globalFrame.contentDocument?.body?.dataset.result, 'Standalone example did not initialize');
+  check(globalFrame.contentDocument.body.dataset.result === 'pass',
+    `Standalone example failed: ${globalFrame.contentDocument.querySelector('#result').textContent}`);
+  globalFrame.remove();
   const { loadBrowserTree } = await import('../../dist/browser.js');
   const loaded = await loadBrowserTree('./loading/mission.yaml', { baseURI: import.meta.url });
   check(loaded.createRunner({ input: { name: 'Browser' } }).tick().output === 'Hello, Browser!',

@@ -7,8 +7,9 @@ Status: development started. Versioned custom value envelopes now support regist
 Build a JavaScript behavior tree library that runs in Node.js, browsers, and
 Adventure Land, with no third-party dependencies in the library or bundled UI.
 Use TypeScript for the core and compile to ESM JavaScript with generated TypeScript
-declarations. TypeScript is a development-only dependency; use Node built-in tools
-for runtime tests and host scripts. Examples and runtime tests remain JavaScript.
+declarations. TypeScript, Node type declarations and esbuild are development-only
+dependencies; use Node built-in tools for runtime tests and host scripts. esbuild
+produces the standalone artifact. Examples and runtime tests remain JavaScript.
 
 Required capabilities:
 
@@ -499,13 +500,21 @@ and configuration precedence have fixture-based coverage.
   scheduling/cancel synchronously before async extension cleanup. Mock-host tests cover
   custom URL schemes, pause/continue, interruption, setup rollback, abort and cleanup
   failures. An interruption example and teardown wiring guidance are included; live
-  Adventure Land validation is still pending. Standalone distribution is next.
+  Adventure Land validation is still pending. Standalone distribution is implemented below.
   Implemented a host-neutral timer scheduler with start/stop/dispose, injectable
   clocks, before/after tick hooks, pause-aware driving, terminal cleanup, and stale
   callback protection. The browser playground now uses it. Deterministic tests cover
   lifecycle, queued completions, reentrant hooks and errors; game loading and real
   Adventure Land validation remain pending.
 - Produce the standalone global distribution with bundled built-ins.
+  Implemented `dist/bhtrees.global.js`, exposing frozen `globalThis.BHTrees` with the
+  core, JSON/YAML, extensions, scheduling, browser and Adventure Land adapters. Node
+  filesystem code is excluded. The build rejects static external imports and package
+  runtime code. Package exports and global declarations are included; isolated VM
+  tests and a classic-script Chrome example cover API parity, codecs, timers, external
+  extension loading and collision protection. esbuild is development-only; runtime
+  remains dependency-free. The artifact targets ES2022. Live Adventure Land validation
+  and declarative option schemas remain pending; debugger work is the next phase.
 
 Gate: load built-in, installed, relative, and absolute extensions; confirm relative
 paths from separate configs; test missing/cyclic dependencies and cleanup after failure.

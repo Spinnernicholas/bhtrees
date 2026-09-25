@@ -9,6 +9,10 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./global": {
+      "types": "./dist/bhtrees.global.d.ts",
+      "default": "./dist/bhtrees.global.js"
+    },
     "./adventure-land": {
       "types": "./dist/adventure-land.d.ts",
       "import": "./dist/adventure-land.js",
@@ -33,7 +37,7 @@
     "test": "npm run test:types && node --test",
     "example": "node examples/basic.js",
     "example:browser": "node scripts/serve.js",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/build-global.js",
     "pretest": "npm run build",
     "preexample": "npm run build",
     "preexample:browser": "npm run build",
@@ -47,6 +51,7 @@
   "types": "./dist/index.d.ts",
   "devDependencies": {
     "@types/node": "^22.20.4",
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
   }
 }
