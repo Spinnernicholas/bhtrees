@@ -469,7 +469,7 @@ reactive interruption, parallel results, repeat budgets, and runs without a blac
   registries/services, setup rollback and reverse disposal. Configured tree loading
   installs extension implementations before binding nodes and cancels managed runners
   before cleanup. Native host resolvers and declarative option schemas remain pending.
-  Next: host adapters for filesystem/package resolution and scheduling.
+  Shared timer scheduling is now implemented; filesystem/package resolution remains next.
   Debugger settings and live reconfiguration await their runtime implementations.
 
 Gate: equivalent JSON/YAML trees and configs yield equivalent canonical documents;
@@ -481,6 +481,11 @@ and configuration precedence have fixture-based coverage.
 - Implement catalogs, named/package/path resolution, manifests, setup, and disposal.
 - Add dependency ordering, option validation, rollback, and capability inspection.
 - Implement Node, browser, and Adventure Land loading/scheduling adapters.
+  Implemented a host-neutral timer scheduler with start/stop/dispose, injectable
+  clocks, before/after tick hooks, pause-aware driving, terminal cleanup, and stale
+  callback protection. The browser playground now uses it. Deterministic tests cover
+  lifecycle, queued completions, reentrant hooks and errors; native loading and real
+  Adventure Land validation remain pending.
 - Produce the standalone global distribution with bundled built-ins.
 
 Gate: load built-in, installed, relative, and absolute extensions; confirm relative

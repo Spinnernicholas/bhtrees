@@ -1,4 +1,4 @@
-import { createRunner, RUNNING } from '../../dist/index.js';
+import { createRunner, createRunnerScheduler, RUNNING } from '../../dist/index.js';
 import { mountTreeView } from './tree-view.js';
 import { createWorld, advanceWorld, createMission } from './game.js';
 
@@ -16,7 +16,7 @@ formatControl.onchange = () => {
   location.assign(url);
 };
 let missionText;
-let runner, lastSignature = '';
+let runner, scheduler, lastSignature = '';
 let previousTime = performance.now();
 function log(message) {
   const item = document.createElement('li');
@@ -65,6 +65,7 @@ function render() {
   if (signature !== lastSignature) { log(`${state.status}${state.paused ? ' (paused)' : ''} Â· ${state.frames.at(-1)?.nodeId ?? 'no active node'} Â· queued: ${state.queuedResumes}`); lastSignature = signature; }
 }
 function reset() {
+  scheduler?.dispose();
   runner?.cancel('reset');
   previousTime = performance.now();
   treeView?.dispose();
@@ -79,12 +80,27 @@ function reset() {
   lastSignature = ''; log('Reset â€” ready to start');
   render();
 }
+function startScheduler() {
+  scheduler?.dispose();
+  scheduler = createRunnerScheduler(runner, {
+    intervalMs: 100,
+    beforeTick() {
+      const now = performance.now();
+      advanceWorld(world, Math.min((now - previousTime) / 1000, 0.2));
+      previousTime = now;
+    },
+    onTick: render,
+    onError(error) { log(`Scheduler failed: ${error.message}`); render(); }
+  });
+  scheduler.start();
+}
 byId('reset').onclick = reset;
 byId('start').onclick = () => {
   if (runner.snapshot().status !== 'idle') return;
   runner = createRunner(tree, { input: { name: byId('name').value } });
   previousTime = performance.now();
   runner.tick(); log('start'); render();
+  startScheduler();
 };
 // A repeated RUNNING action gets one simulation frame before its next evaluation.
 function stepExecution() {
@@ -100,6 +116,7 @@ for (const command of ['pause', 'continue', 'step', 'cancel']) {
     previousTime = performance.now();
     if (command === 'step') stepExecution();
     else runner[command]();
+    if (command === 'continue') startScheduler();
     log(command); render();
   };
 }
@@ -114,18 +131,7 @@ try {
   byId('reset').disabled = false;
   byId('tree-mode').disabled = false;
   formatControl.disabled = false;
-  const loop = setInterval(() => {
-    const now = performance.now();
-    const elapsed = Math.min((now - previousTime) / 1000, 0.2);
-    previousTime = now;
-    const state = runner.snapshot();
-    if (!state.paused && state.status === RUNNING) {
-      advanceWorld(world, elapsed);
-      runner.tick();
-    }
-    render();
-  }, 100);
-  addEventListener('pagehide', () => { clearInterval(loop); runner.cancel('page closed'); treeView.dispose(); }, { once: true });
+  addEventListener('pagehide', () => { scheduler?.dispose(); runner.cancel('page closed'); treeView.dispose(); }, { once: true });
 } catch (error) {
   for (const control of controls) control.disabled = true;
   formatControl.disabled = false;

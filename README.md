@@ -984,7 +984,37 @@ operation still requires application cancellation. Wait setup failures roll back
 previously installed child subscriptions. Snapshots also report `poll`, `any`, or
 `all` as waiting reasons.
 
+## Automatic runner scheduling
+
+```js
+import { createRunnerScheduler } from 'bhtrees';
+
+const scheduler = createRunnerScheduler(runner, {
+  intervalMs: 16,
+  onTick(snapshot) { console.log(snapshot.status); }
+});
+scheduler.start();
+// Later: scheduler.stop() to stop driving, or scheduler.dispose() permanently.
+```
+
+The scheduler uses standard host timers and works without Node or DOM imports.
+It starts asynchronously, drives once per interval, and schedules the next timer
+after the current drive finishes. Repeated starts are idempotent. Terminal runners
+(including cancelled and errored runners) stop scheduling automatically. Paused
+runners are checked each interval but are not ticked; resume with `runner.continue()`.
+Pending operation timers still follow the runner's clock and can settle while paused.
+
+`beforeTick()` runs before an unpaused drive, and `onTick(snapshot)` runs afterward.
+Hook errors stop scheduling and reach `onError(error)`, or are rethrown if no handler
+was supplied. Action errors normally appear in the runner's errored snapshot instead.
+An optional `clock` implements asynchronous `setTimeout` and `clearTimeout`, as with
+runner clocks. The default interval is 16 ms; custom intervals must be finite and
+positive. Stop/dispose release only the scheduler timer, leaving the runner and its
+pending operations intact; call `runner.cancel()` when those should also be stopped.
+Create one scheduler per runner and dispose it when the host view/session closes.
+The browser playground demonstrates simulation advancement in `beforeTick`.
+
 Not implemented yet: full YAML syntax beyond the documented profile, debugger
 configuration, native package/filesystem extension adapters, debugger controller/UI, recordings/checkpoints,
-standalone bundles or environment adapters. The engine uses standard host timers by default and no DOM or game
+standalone bundles or environment-specific loading adapters. The engine uses standard host timers by default and no DOM or game
 globals. The browser example is validated in headless Chrome; Adventure Land integration remains unvalidated.
